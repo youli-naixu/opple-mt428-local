@@ -79,6 +79,8 @@ Static analysis of the vendor-distributed **OPPLE Smart Lighting / 欧普智慧�
 
 Evidence includes the official distribution link, package/version, SHA-256, relevant classes/methods, and field tables in the [research notes](docs/research.en.md#side-light-static-analysis). Vendor code/assets are not redistributed. This is stronger than guessing a command from the product name, but **current-firmware placeholder behavior, physical channel mapping, and collateral effects still need daylight verification**.
 
+A later [read-only observation](docs/observations.md) found candidate head fields consistent with the legacy state in one snapshot; this still does not validate independent arm writes or placeholder semantics.
+
 To inspect candidate read-only fields:
 
 ```sh

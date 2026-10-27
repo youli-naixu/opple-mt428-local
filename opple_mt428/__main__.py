@@ -4,6 +4,7 @@
 import argparse
 import json
 import logging
+import sys
 
 from .discovery import discover
 from .protocol import LampError, OppleLamp
@@ -12,6 +13,9 @@ from .simulator import SimulatedLamp
 
 
 def main():
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
     parser = argparse.ArgumentParser(description="OPPLE MT428 局域网发现、只读研究与网页控制 / LAN discovery, research and web control")
     sub = parser.add_subparsers(dest="command", required=True)
     search = sub.add_parser("discover", help="只读发现 / read-only discovery (SEARCH only)")
