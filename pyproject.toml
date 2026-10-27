@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "opple-mt428-local"
+version = "0.1.0"
+description = "OPPLE MT428 / Huawei HiLink local UDP control, discovery, research and web demo"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "youli-naixu and contributors" }]
+keywords = ["opple", "mt428", "hilink", "huawei", "broadlink", "lan", "udp", "desk-lamp", "side-light", "iot"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Operating System :: OS Independent",
+  "Topic :: Home Automation",
+]
+
+[project.scripts]
+opple-mt428 = "opple_mt428.__main__:main"
+
+[project.urls]
+Repository = "https://github.com/youli-naixu/opple-mt428-local"
+Issues = "https://github.com/youli-naixu/opple-mt428-local/issues"
+
+[tool.setuptools.packages.find]
+include = ["opple_mt428*"]
+
+[tool.setuptools.package-data]
+opple_mt428 = ["static/*.html", "static/*.css", "static/*.js"]

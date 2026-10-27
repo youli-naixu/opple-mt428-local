@@ -1,0 +1,44 @@
+name: Device or protocol report / 设备与协议报告
+description: Share reproducible, redacted findings / 提交可复核的脱敏证据
+title: '[Device] '
+body:
+  - type: markdown
+    attributes:
+      value: 'Do not upload secrets, real IP/MAC/name, raw PCAP, APK, SDK or vendor code. 不要上传凭据、真实设备身份或厂商原材料。'
+  - type: input
+    id: model
+    attributes:
+      label: Full model / 完整型号
+      placeholder: MT428-D0.5×36+0.2×21-WTT
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: SKU and raw version / SKU与版本原始字段
+      description: Do not include the device MAC, account or device ID.
+  - type: dropdown
+    id: evidence
+    attributes:
+      label: Evidence level / 证据等级
+      options:
+        - Read-only status / 只读回读
+        - Physical write and visual validation / 实物写入与目视确认
+        - Public source or vendor-app static analysis / 公开源码或App静态证据
+        - Hypothesis / 假设
+    validations:
+      required: true
+  - type: textarea
+    id: findings
+    attributes:
+      label: Findings and reproduction / 发现与复核步骤
+      description: Use synthetic/example addresses and independently summarized fields.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy and authorization / 脱敏与授权
+      options:
+        - label: I own or am authorized to test the device; the report contains no credentials or real network identities. / 已获授权且内容已脱敏。
+          required: true

@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f1e9">
+  <meta name="description" content="欧普台灯局域网控制工作台。预览、调光、本地场景与定时关灯。">
+  <title>欧普台灯 · 局域网控制</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <defs>
+      <symbol id="icon-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+      <symbol id="icon-power" viewBox="0 0 24 24"><path d="M12 3v8M6.3 5.8a8 8 0 1 0 11.4 0"/></symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 7a7 7 0 0 1 11.6-1L20 9M4 15l2.3 3A7 7 0 0 0 17.9 17"/></symbol>
+      <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+      <symbol id="icon-book" viewBox="0 0 24 24"><path d="M12 6c-3-2-6-2-9-1v14c3-1 6-1 9 1 3-2 6-2 9-1V5c-3-1-6-1-9 1Zm0 0v14"/></symbol>
+      <symbol id="icon-screen" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/></symbol>
+      <symbol id="icon-moon" viewBox="0 0 24 24"><path d="M20.4 14.2A8.8 8.8 0 0 1 9.8 3.6a8.9 8.9 0 1 0 10.6 10.6Z"/></symbol>
+      <symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+      <symbol id="icon-undo" viewBox="0 0 24 24"><path d="M8 4 3 9l5 5M3 9h10a6 6 0 0 1 0 12h-2"/></symbol>
+      <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+      <symbol id="icon-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6m0-10v.1"/></symbol>
+      <symbol id="icon-lock" viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/></symbol>
+      <symbol id="icon-router" viewBox="0 0 24 24"><rect x="3" y="12" width="18" height="8" rx="2"/><path d="M7 16h.1m3 0h.1M6 12V5m12 7V5M9 6a5 5 0 0 1 6 0m-4-3a5 5 0 0 1 2 0"/></symbol>
+      <symbol id="icon-chip" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4m6-4v4M9 18v4m6-4v4M2 9h4m-4 6h4m12-6h4m-4 6h4M10 10h4v4h-4Z"/></symbol>
+      <symbol id="icon-home" viewBox="0 0 24 24"><path d="m3 11 9-8 9 8M5 10v11h14V10m-10 11v-7h6v7"/></symbol>
+      <symbol id="icon-nodes" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="6" rx="1"/><rect x="2" y="16" width="6" height="6" rx="1"/><rect x="16" y="16" width="6" height="6" rx="1"/><path d="M12 8v4m-7 4v-4h14v4"/></symbol>
+    </defs>
+  </svg>
+
+  <a class="skip-link" href="#mainControls">跳至灯光控制</a>
+  <div class="page-shell">
+    <header class="site-header">
+      <a class="brand" href="#" aria-label="欧普台灯，返回顶部">
+        <span class="brand-icon" aria-hidden="true"><svg viewBox="0 0 36 36"><path d="M10 10h16M18 10v17m-7 0h14M10 10c0-4 16-4 16 0"/><path class="brand-light" d="m11 14-3 6m9-6v6m8-6 3 6"/></svg></span>
+        <span><strong>欧普台灯</strong><span class="brand-subtitle">局域网控制</span></span>
+      </a>
+      <div class="header-actions">
+        <span class="connection-badge is-loading" id="connectionBadge"><span class="status-dot" aria-hidden="true"></span><span id="connectionText">连接中</span></span>
+        <button class="icon-button" id="refreshButton" type="button" aria-label="刷新设备状态" title="刷新设备状态"><svg class="icon" aria-hidden="true"><use href="#icon-refresh"/></svg></button>
+      </div>
+    </header>
+
+    <aside class="mode-banner is-loading" id="modeBanner" role="status" aria-live="polite" aria-atomic="true">
+      <svg class="icon" aria-hidden="true"><use href="#icon-info"/></svg>
+      <div><strong id="modeBannerTitle">正在确认运行模式 / Checking mode</strong><p id="modeBannerNote">确认前仅查询状态 / Status queries only until the mode is known.</p></div>
+    </aside>
+
+    <main>
+      <div class="page-heading">
+        <div><p class="eyebrow"><span class="tiny-line" aria-hidden="true"></span> 你的桌面，恰好的光</p><h1>把光调成<span>喜欢的样子。</span></h1></div>
+        <p class="heading-note">从一页书，到片刻放松。<br>让这一束光，跟上你的节奏。</p>
+      </div>
+
+      <section class="workspace" aria-label="台灯预览与主控制">
+        <div class="lamp-stage" id="lampStage">
+          <div class="stage-topline"><span class="stage-label"><span class="small-square" aria-hidden="true"></span> 桌面上的光</span><span class="preview-badge" id="previewMode">光线示意 · 等待查询</span></div>
+          <div class="lamp-illustration" id="lampIllustration">
+            <svg class="lamp-art" viewBox="0 0 600 410" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="lampArtTitle lampArtDesc">
+              <title id="lampArtTitle">欧普台灯光线示意</title><desc id="lampArtDesc">白色台灯立在桌面上，光晕随亮度与色温草稿改变。示意图不代表设备已执行。</desc>
+              <defs>
+                <linearGradient id="lampBody" x1="0" x2="1" y1="0" y2="0"><stop stop-color="#cccfc7"/><stop offset=".24" stop-color="#fafaf5"/><stop offset=".7" stop-color="#fefef8"/><stop offset="1" stop-color="#d3d7cd"/></linearGradient>
+                <linearGradient id="lampHead" x1="0" y1="0" x2=".3" y2="1"><stop stop-color="#fffffa"/><stop offset=".6" stop-color="#f4f4eb"/><stop offset="1" stop-color="#d3d6cc"/></linearGradient>
+                <linearGradient id="lampBase" x1="0" x2="0" y1="0" y2="1"><stop stop-color="#fffffa"/><stop offset=".6" stop-color="#e9ece2"/><stop offset="1" stop-color="#c6cdbf"/></linearGradient>
+                <linearGradient id="lightBeam" x1="0" x2="0" y1="0" y2="1"><stop class="glow-stop" stop-color="#ffdfaa" stop-opacity=".52"/><stop class="glow-stop" offset="1" stop-color="#ffdfaa" stop-opacity="0"/></linearGradient>
+                <radialGradient id="lightPool"><stop class="glow-stop" stop-color="#ffdfaa" stop-opacity=".8"/><stop class="glow-stop" offset=".62" stop-color="#ffdfaa" stop-opacity=".3"/><stop class="glow-stop" offset="1" stop-color="#ffdfaa" stop-opacity="0"/></radialGradient>
+                <radialGradient id="tableShadow"><stop stop-color="#8d937f" stop-opacity=".2"/><stop offset="1" stop-color="#8d937f" stop-opacity="0"/></radialGradient>
+              </defs>
+              <path class="stage-orbit" d="M111 314a184 184 0 0 1 367-28" fill="none" stroke="#d8dbcc" stroke-width="1" stroke-dasharray="3 7"/>
+              <ellipse cx="302" cy="358" rx="223" ry="38" fill="url(#tableShadow)"/>
+              <g class="lamp-glow"><path d="m157 107 171 2 114 228c-80 31-220 34-345 2Z" fill="url(#lightBeam)"/><ellipse cx="254" cy="338" rx="211" ry="57" fill="url(#lightPool)"/></g>
+              <g class="desk-book" transform="translate(104 298) rotate(-7)"><path d="m0 8 88-9 45 26-89 10Z" fill="#d0d7be"/><path d="m0 3 88-9 45 26-89 10Z" fill="#faf8ed" stroke="#d4d5c7"/><path d="m44 30 1 5M88-6v6" stroke="#c0c6b2"/><path d="m18 5 28-3m-17 10 33-3m-4 10 27-3" fill="none" stroke="#d6d6c8" stroke-width="1.4"/></g>
+              <ellipse cx="367" cy="348" rx="96" ry="17" fill="#79866d" opacity=".11"/>
+              <path d="M282 331c0-22 164-22 164 0v9c0 26-164 26-164 0Z" fill="url(#lampBase)" stroke="#cdd3c4"/>
+              <ellipse cx="364" cy="330" rx="82" ry="20" fill="#f9faf2" stroke="#e0e4d9"/>
+              <ellipse cx="364" cy="330" rx="59" ry="13" fill="none" stroke="#e0e5d8" stroke-width=".8"/>
+              <path d="M365 325V188c0-61-20-87-63-87h-29" fill="none" stroke="#bdc6b5" stroke-width="17" stroke-linecap="round"/>
+              <path d="M366 323V187c0-58-20-84-63-84h-30" fill="none" stroke="url(#lampBody)" stroke-width="13" stroke-linecap="round"/>
+              <path d="M369 319V189c0-32-6-55-18-68" fill="none" stroke="#fffffc" stroke-width="2.6" stroke-linecap="round" opacity=".8"/>
+              <path d="M149 97c5-27 174-27 180 0v11c-2 25-179 25-180 0Z" fill="url(#lampHead)" stroke="#d1d6c9"/>
+              <ellipse cx="239" cy="96" rx="90" ry="21" fill="#fdfef7" stroke="#e0e4d7"/>
+              <ellipse cx="239" cy="109" rx="79" ry="11" fill="#e5e8dc"/>
+              <ellipse class="lamp-emitter" cx="239" cy="110" rx="73" ry="8.5" fill="#fff4d6"/>
+              <path d="M169 89c29-10 96-14 135 0" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+              <text x="352" y="339" fill="#a2ad98" font-size="7.4" letter-spacing="1.3" font-family="Arial, sans-serif">OPPLE</text>
+              <circle cx="333" cy="325" r="3.8" fill="none" stroke="#aab69f" stroke-width=".8"/><path d="M333 320v4" stroke="#aab69f" stroke-width=".8"/>
+              <path d="M441 343c29 3 30 13 61 13" fill="none" stroke="#c1c7b8" stroke-width="2" stroke-linecap="round"/>
+              <circle cx="470" cy="177" r="4" fill="#a4b398" opacity=".6"/><path d="M470 159v8m0 20v8m-18-18h8m20 0h8" stroke="#a4b398" stroke-width="1" opacity=".6"/>
+            </svg>
+          </div>
+          <div class="actual-state-heading"><div><p class="micro-label" id="actualStateLabel">设备实际状态</p><h2 id="lampStateValue">等待连接<span class="loading-ellipsis" aria-hidden="true">…</span></h2></div><span class="state-caption" id="stateCaption">以设备读回为准</span></div>
+          <dl class="state-metrics">
+            <div><dt>亮度</dt><dd><span id="actualBrightness">—</span><span class="metric-unit">%</span></dd></div>
+            <div><dt>色温</dt><dd><span id="actualColorTemp">—</span><span class="metric-unit">K</span></dd></div>
+            <div><dt>灯光</dt><dd class="metric-power" id="actualPower">待查询</dd></div>
+          </dl>
+          <div class="stage-footer"><span id="lastUpdated">最后更新：尚无读数</span><span class="stage-model">MT428 系列</span></div>
+        </div>
+
+        <section class="main-controls" id="mainControls" aria-labelledby="controlTitle">
+          <div class="section-heading"><div><p class="eyebrow">光线控制</p><h2 id="controlTitle">此刻，刚刚好</h2></div><span class="quiet-tag">本地连接</span></div>
+          <div class="power-row"><div><h3>灯光开关</h3><p id="powerHint">正在读取实际开关状态</p></div><button id="powerButton" class="power-toggle" type="button" aria-pressed="false" aria-label="灯光状态待查询" disabled><span class="power-knob" aria-hidden="true"><svg class="icon"><use href="#icon-power"/></svg></span><span id="powerText">读取中</span></button></div>
+
+          <div class="slider-field brightness-field">
+            <div class="field-heading"><label for="brightnessRange"><svg class="icon" aria-hidden="true"><use href="#icon-sun"/></svg> 亮度</label><output for="brightnessRange" id="brightnessOutput">60<span>%</span></output></div>
+            <input id="brightnessRange" type="range" min="1" max="100" step="1" value="60" aria-describedby="lightDraftHelp" aria-valuetext="60%">
+            <div class="range-labels"><span>柔和</span><span>明亮</span></div>
+          </div>
+          <div class="slider-field temperature-field">
+            <div class="field-heading"><label for="colorTempRange"><span class="temperature-icon" aria-hidden="true"></span> 色温</label><output for="colorTempRange" id="colorTempOutput">4000<span>K</span></output></div>
+            <input id="colorTempRange" type="range" min="2700" max="6500" step="1" value="4000" aria-describedby="lightDraftHelp colorTempHelp" aria-valuetext="4000 K">
+            <div class="range-labels"><span>2700 K · 暖光</span><span>6500 K · 冷光</span></div>
+            <p class="sr-only" id="colorTempHelp">色温单位为开尔文。方向键每次调整 100 K，按住 Shift 时每次调整 10 K。</p>
+          </div>
+          <div class="draft-note" id="lightDraftHelp"><span class="draft-indicator" id="draftIndicator" aria-hidden="true"></span><span id="draftStatus">拖动只预览，点击应用后才控制台灯</span></div>
+          <button class="button button-primary apply-button" id="applyButton" type="button" disabled><span id="applyButtonText">开灯并应用</span><svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button>
+          <p class="control-footnote">开灯后应用亮度与色温；开关独立控制。副灯已定位协议，实验待验证。</p>
+          <div class="feedback is-loading" id="feedback"><svg class="icon" aria-hidden="true"><use id="feedbackIcon" href="#icon-info"/></svg><p id="liveStatus" role="status" aria-live="polite" aria-atomic="true">正在查询本地服务，等待设备实际状态…</p></div>
+        </section>
+      </section>
+
+      <div class="secondary-grid">
+        <section class="card scenes-panel" id="scenePanel" aria-labelledby="sceneTitle">
+          <div class="section-heading"><div><p class="eyebrow">本地场景</p><h2 id="sceneTitle">一键，换个节奏</h2></div><span class="quiet-tag">组合预设</span></div>
+          <p class="section-description">把亮度与色温搭配好，留给不同的时刻。</p>
+          <div class="scene-list" id="sceneList" aria-busy="true">
+            <button class="scene-card" type="button" disabled><span class="scene-icon"><svg class="icon" aria-hidden="true"><use href="#icon-book"/></svg></span><strong>阅读</strong><span class="scene-settings">等待查询</span><span class="scene-description">明亮而专注</span></button>
+            <button class="scene-card" type="button" disabled><span class="scene-icon"><svg class="icon" aria-hidden="true"><use href="#icon-screen"/></svg></span><strong>屏幕</strong><span class="scene-settings">等待查询</span><span class="scene-description">舒适的陪伴</span></button>
+            <button class="scene-card" type="button" disabled><span class="scene-icon"><svg class="icon" aria-hidden="true"><use href="#icon-moon"/></svg></span><strong>放松</strong><span class="scene-settings">等待查询</span><span class="scene-description">慢慢静下来</span></button>
+          </div>
+          <p class="panel-footnote"><svg class="icon" aria-hidden="true"><use href="#icon-info"/></svg> 场景是本地参数组合，不是台灯原厂模式。</p>
+        </section>
+
+        <section class="card timer-panel" id="timerPanel" aria-labelledby="timerTitle">
+          <div class="section-heading"><div><p class="eyebrow">定时关灯</p><h2 id="timerTitle">也给光，一个晚安</h2></div><svg class="icon section-icon" aria-hidden="true"><use href="#icon-clock"/></svg></div>
+          <form id="timerForm">
+            <fieldset class="timer-fieldset"><legend class="sr-only">选择定时关灯时长</legend><div class="timer-options">
+              <label><input type="radio" name="timerMinutes" value="15"><span>15 分钟</span></label>
+              <label><input type="radio" name="timerMinutes" value="30" checked><span>30 分钟</span></label>
+              <label><input type="radio" name="timerMinutes" value="60"><span>60 分钟</span></label>
+              <label><input type="radio" name="timerMinutes" value="custom"><span>自定义</span></label>
+            </div></fieldset>
+            <div class="custom-timer" id="customTimerRow" hidden><label for="customMinutes">自定义时长</label><span><input id="customMinutes" type="number" min="1" max="120" step="1" value="45" inputmode="numeric" aria-describedby="customTimerHelp"> 分钟</span><small id="customTimerHelp">可设置 1–120 分钟</small></div>
+            <div class="timer-bottom"><div class="timer-state"><span id="timerLabel">尚无定时读数</span><strong id="timerCountdown">—<span class="timer-muted"> : </span>—</strong><small id="timerEndTime">由本地服务执行</small></div><div class="timer-actions"><button class="button button-secondary" id="setTimerButton" type="submit" disabled>设置定时</button><button class="text-button" id="cancelTimerButton" type="button" disabled>取消定时</button></div></div>
+          </form>
+          <p class="panel-footnote">本地服务需保持运行；倒计时结束后的关灯结果以设备读回为准。</p>
+        </section>
+      </div>
+
+      <section class="card side-light-panel" id="sideLightPanel" aria-labelledby="sideLightTitle" hidden>
+        <div class="section-heading"><div><p class="eyebrow">独立实验通道 / Experimental channel</p><h2 id="sideLightTitle">侧灯 · 实验待验证</h2></div><span class="capability-badge is-experimental">实验性 / Experimental</span></div>
+        <p class="experimental-warning" id="sideLightWarning">已定位协议，实验待验证。查询字段仅为候选，不代表物理验证 / Protocol located; query fields are candidates, not physical verification.</p>
+        <p class="side-light-mode" id="sideLightMode"></p>
+        <div class="side-light-grid">
+          <div><p class="micro-label">查询返回的已知字段 / Known query fields</p><dl class="side-light-channels" id="sideLightChannels"></dl><p class="panel-footnote">仅展示返回的 arm_power_raw、arm_brightness_raw 原始值，不推断开关含义 / Raw values only; no inferred power state.</p></div>
+          <div class="side-light-controls">
+            <div class="side-light-actions"><button class="button button-outline" id="sideLightOnButton" type="button" aria-describedby="sideLightWarning sideLightMode" disabled>实验开启侧灯</button><button class="button button-outline" id="sideLightOffButton" type="button" aria-describedby="sideLightWarning sideLightMode" disabled>实验关闭侧灯</button></div>
+            <div class="slider-field"><div class="field-heading"><label for="sideLightBrightnessRange">侧灯亮度 · 原始值</label><output id="sideLightBrightnessOutput" for="sideLightBrightnessRange">10</output></div><input id="sideLightBrightnessRange" type="range" min="10" max="255" step="1" value="10" aria-describedby="sideLightWarning sideLightBrightnessHelp" disabled><div class="range-labels"><span>10</span><span>255</span></div></div>
+            <button class="button button-secondary" id="sideLightApplyButton" type="button" aria-describedby="sideLightWarning sideLightMode" disabled>应用侧灯亮度</button>
+            <p class="panel-footnote" id="sideLightBrightnessHelp">滑块仅准备原始值，点击才发送一次实验指令；缺少对应候选字段时禁用 / One request per click; controls require the corresponding candidate field.</p>
+          </div>
+        </div>
+        <p class="side-light-feedback" id="sideLightFeedback" role="status" aria-live="polite" aria-atomic="true">尚未发送实验指令 / No experimental command sent.</p>
+      </section>
+
+      <section class="restore-strip" aria-labelledby="restoreTitle"><div class="restore-icon"><svg class="icon" aria-hidden="true"><use href="#icon-undo"/></svg></div><div class="restore-copy"><h2 id="restoreTitle">试过喜欢的光，也能回到最初</h2><p id="initialStateSummary">本地服务会在首次查询时保存本次启动的初始状态。</p></div><button class="button button-outline" id="restoreButton" type="button" disabled>恢复本次启动时状态<svg class="icon" aria-hidden="true"><use href="#icon-undo"/></svg></button></section>
+
+      <section class="more-section" aria-label="更多功能与接入规划">
+        <div class="tabs" role="tablist" aria-label="工作台信息"><button class="tab is-active" id="tab-capabilities" type="button" role="tab" aria-selected="true" aria-controls="capabilitiesPanel" tabindex="0">全部功能<span id="capabilityCount" class="tab-count">—</span></button><button class="tab" id="tab-integration" type="button" role="tab" aria-selected="false" aria-controls="integrationPanel" tabindex="-1">接入规划</button><button class="tab" id="tab-device" type="button" role="tab" aria-selected="false" aria-controls="devicePanel" tabindex="-1">设备与记录</button></div>
+
+        <div class="tab-panel" id="capabilitiesPanel" role="tabpanel" aria-labelledby="tab-capabilities" tabindex="0">
+          <div class="panel-heading"><div><h2>每一项能力，都有依据</h2><p>已验证、本地可用、实验性待验证和未适配功能分别标记；模拟回读不代表实物验证。</p></div><span class="quiet-tag" id="capabilityModeNote">以当前模式为准</span></div>
+          <div class="capability-list" id="capabilityList"><div class="empty-state">正在读取功能清单…</div></div>
+          <p class="panel-footnote">副灯已定位协议，实验待验证 / Side-light protocol located; experimental, pending visual verification. 原厂定时等其他扩展仍待适配。</p>
+        </div>
+
+        <div class="tab-panel" id="integrationPanel" role="tabpanel" aria-labelledby="tab-integration" tabindex="0" hidden>
+          <div class="panel-heading"><div><h2>把控制，安稳地留在家里</h2><p>让网页与自动化复用一套 HTTP API，让台灯始终只有一个 UDP 控制者。</p></div><span class="quiet-tag">接入规划 · 待实施</span></div>
+          <div class="plan-steps" role="tablist" aria-label="选择接入阶段">
+            <button class="plan-step is-active" id="plan-tab-router" type="button" role="tab" aria-selected="true" aria-controls="plan-router" tabindex="0"><span class="step-number">01</span><svg class="icon" aria-hidden="true"><use href="#icon-router"/></svg><strong>路由器</strong><small>单一控制入口</small></button>
+            <button class="plan-step" id="plan-tab-esp" type="button" role="tab" aria-selected="false" aria-controls="plan-esp" tabindex="-1"><span class="step-number">02</span><svg class="icon" aria-hidden="true"><use href="#icon-chip"/></svg><strong>ESP 管理网页</strong><small>复用 HTTP API</small></button>
+            <button class="plan-step" id="plan-tab-move" type="button" role="tab" aria-selected="false" aria-controls="plan-move" tabindex="-1"><span class="step-number">03</span><svg class="icon" aria-hidden="true"><use href="#icon-home"/></svg><strong>搬家与换网</strong><small>同网更新地址</small></button>
+            <button class="plan-step" id="plan-tab-mcp" type="button" role="tab" aria-selected="false" aria-controls="plan-mcp" tabindex="-1"><span class="step-number">04</span><svg class="icon" aria-hidden="true"><use href="#icon-nodes"/></svg><strong>家庭 MCP</strong><small>统一自动化入口</small></button>
+          </div>
+          <div class="plan-detail" id="plan-router" role="tabpanel" aria-labelledby="plan-tab-router"><strong>路由器负责与台灯通信</strong><p>规划由路由器作为唯一的台灯 UDP 55001 控制者，并提供 HTTP API。网页只调用 HTTP，避免多个客户端同时争用设备通信。</p><div class="flow-line"><span>网页 / 自动化</span><span aria-hidden="true">→</span><span class="flow-center">路由器 HTTP API</span><span aria-hidden="true">→</span><span>台灯 · UDP 55001</span></div></div>
+          <div class="plan-detail" id="plan-esp" role="tabpanel" aria-labelledby="plan-tab-esp" hidden><strong>ESP 管理网页沿用同一套接口</strong><p>把灯光控制嵌入 ESP 管理网页时，继续调用路由器提供的 HTTP API。由同源代理或明确的跨域配置完成网页接入，ESP 网页不再另开一套台灯 UDP 控制通道。</p><div class="flow-line"><span>ESP 管理网页</span><span aria-hidden="true">→</span><span class="flow-center">复用 HTTP API</span><span aria-hidden="true">→</span><span>路由器控制台灯</span></div></div>
+          <div class="plan-detail" id="plan-move" role="tabpanel" aria-labelledby="plan-tab-move" hidden><strong>搬家后，先让控制者与台灯回到同网</strong><p>台灯接入新局域网后，在控制服务中更新设备单播 IP，必要时配置 DHCP 地址保留。跨网络访问通过私网单播连接 HTTP API，不搬运组播到其他网络。</p><div class="flow-line"><span>同网连接</span><span aria-hidden="true">→</span><span class="flow-center">更新台灯 IP</span><span aria-hidden="true">→</span><span>重新查询验证</span></div></div>
+          <div class="plan-detail" id="plan-mcp" role="tabpanel" aria-labelledby="plan-tab-mcp" hidden><strong>用家庭 MCP 封装稳定的控制动作</strong><p>在相同 HTTP API 上封装查询、开关、亮度、色温与场景。每次控制继续遵循“写入后读回”的验证规则，跨网仍使用私网单播。</p><div class="method-list"><code>get_status</code><code>set_power</code><code>set_brightness</code><code>set_color_temp</code><code>apply_scene</code></div></div>
+
+          <div class="multicast-card"><div class="multicast-heading"><div><p class="eyebrow">组播，简单理解</p><h3>接收组，像一个公共频道</h3></div><button class="button button-outline small-button" id="multicastDemoButton" type="button" aria-pressed="false" aria-controls="multicastDiagram">演示同组接收<svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button></div>
+            <div class="multicast-diagram" id="multicastDiagram" role="img" aria-label="发送端向接收组 238.238.238.238 发送数据，同网订阅该组的成员可能收到；接收组地址不是台灯 IP。"><div class="network-node sender-node"><svg class="icon" aria-hidden="true"><use href="#icon-router"/></svg><strong>发送端</strong><small>局域网内</small></div><div class="network-wire wire-in" aria-hidden="true"><i></i></div><div class="network-group"><span>接收组</span><strong>238.238.238.238</strong><small>共同订阅的“频道”</small></div><div class="network-wire wire-out" aria-hidden="true"><i></i></div><div class="network-receivers"><span class="receiver">同组成员 A</span><span class="receiver">同组成员 B</span></div></div>
+            <p class="diagram-feedback" id="multicastFeedback" role="status" aria-live="polite">点击只播放本页示意，不发送任何网络数据。</p>
+            <div class="multicast-notes"><p><strong>一次发送，多方接收。</strong>IPv4 的 224.0.0.0–239.255.255.255 是组播地址范围。发送者把数据发给组地址，网络再转给相应接收者。</p><p><strong>组地址不是灯 IP。</strong>接收组用于同组接收；台灯的实际单播 IP 请看“设备与记录”。网络是否转发仍取决于配置。</p><p><strong>TTL 是跳数，不是秒数。</strong>它限制数据包可经过的路由跳数；跨网方案使用私网单播，不迁移组播。</p><p><strong>这台灯在寻找同伴。</strong>抓包看到它向 238.238.238.238:5683 发送 CoAP 发现请求。当前面板直接访问台灯自己的 IP 和 UDP 55001 端口，因此不依赖组播。</p></div>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="devicePanel" role="tabpanel" aria-labelledby="tab-device" tabindex="0" hidden>
+          <div class="device-activity-grid"><section aria-labelledby="deviceTitle"><div class="panel-heading"><div><h2 id="deviceTitle">这盏灯</h2><p>由设备接口返回，未知字段保留为空。</p></div></div><dl class="device-details" id="deviceDetails"><div><dt>设备名称</dt><dd>等待查询</dd></div><div><dt>型号</dt><dd>MT428-D0.5×36+0.2×21-WTT</dd></div></dl></section><section aria-labelledby="activityTitle"><div class="panel-heading"><div><h2 id="activityTitle">最近的操作</h2><p>模拟记录与实物读回分开标注；实验候选字段匹配仍待目视验证。</p></div></div><ol class="activity-list" id="activityList"><li class="empty-state">等待服务返回操作记录…</li></ol></section></div>
+        </div>
+      </section>
+    </main>
+    <footer class="site-footer"><span><span class="footer-dot" aria-hidden="true"></span> 一盏灯，一个安静的工作台。</span><span>本地控制 Demo · 无外部资源</span></footer>
+  </div>
+  <noscript><div class="noscript-message">请启用 JavaScript 以读取设备状态和使用控制功能。页面不会在未启用脚本时执行控制。</div></noscript>
+</body>
+</html>

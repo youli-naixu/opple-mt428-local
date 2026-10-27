@@ -1,0 +1,33 @@
+OPPLE MT428 Local
+Copyright (c) 2026 youli-naixu and contributors
+
+This project is distributed under the Apache License, Version 2.0.
+
+Protocol provenance:
+The original jedmeng/python-oppleio project and its tinysnake/python-oppleio-legacy
+fork provided the documented packet layout, command values, CRC/XOR behavior,
+and device-state interpretation used as the basis for this adapter.
+https://github.com/jedmeng/python-oppleio
+https://github.com/tinysnake/python-oppleio-legacy
+
+The adapter is reorganized and modified for explicit device identity, checked
+lengths and CRC, read-only defaults, bounded discovery, simulation, reply
+verification, and experimental SKU-specific channel research. No unmodified
+upstream Python package is bundled. The Apache-2.0 license and attribution chain
+are retained conservatively; see THIRD_PARTY_NOTICES.md for the legacy fork's
+license-file and package-metadata discrepancies.
+
+Home Assistant's Opple integration and jedmeng/homebridge-opple are referenced
+for interoperability context. Other linked projects are research references,
+not bundled dependencies. No GPL reference code, unlicensed project code,
+proprietary vendor app code, extracted vendor profiles, APK, SDK, firmware,
+logo, or original packet capture is included.
+
+OPPLE, Huawei, HiLink, Broadlink, Home Assistant, and other product/project
+names belong to their respective owners. Their use here identifies compatible
+research targets and references and does not imply endorsement.
+
+Chinese summary / 中文摘要：
+本项目保留原始pyoppleio协议研究来源及Apache-2.0许可，独立增加严格报文核验、
+只读默认、受控发现、模拟模式和实验侧灯研究。链接中的厂商材料及第三方项目
+不因被引用而成为本项目许可的一部分；未分发其未授权代码、资源或凭据。
