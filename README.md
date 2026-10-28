@@ -12,6 +12,12 @@ Independent community research; not affiliated with, endorsed by, or sponsored b
 
 ![Web demo in simulation mode; no hardware connected](docs/images/demo-simulation.png)
 
+## Why share this lamp?
+
+This project grew out of my experience using the lamp. I tried OPPLE's related apps, but repeatedly ran into puzzling problems; sometimes they simply would not connect. To me, this lamp reflects an early, exploratory stage of Huawei and OPPLE's collaboration. Its control approach differs from today's common smart-home systems and comes with some unusual behavior.
+
+I wanted to share the connection problems, protocol clues, and local-control methods that have been verified, so others using or researching the same lamp have a clearer starting point. This background describes my experience and interpretation; the research notes distinguish tested capabilities, applicable versions, and remaining uncertainties.
+
 ## Start without a lamp
 
 Python **3.10+**. There are no third-party runtime dependencies. From the repository root:
