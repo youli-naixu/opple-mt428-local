@@ -20,11 +20,15 @@ class ApplicationTests(unittest.TestCase):
         return app
 
     def test_simulation_never_creates_device_socket(self):
-        with patch("socket.socket", side_effect=AssertionError("UDP socket was attempted")):
-            app = self.make_app()
-            result = app.control({"power": True, "brightness": 128, "color_temp": 4000})
-        self.assertTrue(result["simulated"])
-        self.assertTrue(result["verified"])
+        with patch("socket.socket", side_effect=AssertionError("Device socket was attempted")):
+            for experimental in (False, True):
+                app = self.make_app(experimental_side_light=experimental)
+                result = app.control({"power": True, "brightness": 128, "color_temp": 4000})
+                self.assertTrue(result["simulated"])
+                self.assertTrue(result["verified"])
+                if experimental:
+                    self.assertTrue(app.side_light({"power": True, "brightness": 10})["protocol_verified"])
+                self.assertTrue(app.restore()["verified"])
 
     def test_read_only_blocks_control_restore_scene_timer_and_side_light(self):
         app = self.make_app(read_only=True, experimental_side_light=True)
@@ -95,14 +99,227 @@ class ApplicationTests(unittest.TestCase):
         self.assertNotIn(b"200 OK", received)
         self.assertFalse(app.lamp.state["power"])
 
-    def test_side_light_is_single_shot_and_never_hardware_verified(self):
+    def test_side_light_combination_sends_brightness_then_power_with_each_query(self):
         app = self.make_app(experimental_side_light=True)
-        with patch.object(app.lamp, "write_side_light", wraps=app.lamp.write_side_light) as writer:
-            result = app.side_light({"power": True, "brightness": 123})
-        writer.assert_called_once()
+        calls = []
+        original_write, original_query = app.lamp.write_side_light, app.lamp.query
+        def write(changes):
+            calls.append(("write", dict(changes)))
+            original_write(changes)
+        def query():
+            calls.append(("query",))
+            return original_query()
+        app.lamp.write_side_light, app.lamp.query = write, query
+        result = app.side_light({"power": True, "brightness": 123})
+        self.assertEqual(calls, [("query",), ("write", {"brightness": 123}), ("query",), ("write", {"power": True}), ("query",)])
+        self.assertTrue(result["protocol_verified"])
         self.assertTrue(result["candidate_readback_matched"])
+        self.assertTrue(result["head_fields_preserved"])
         self.assertFalse(result["verified"])
-        self.assertFalse(result["state"]["power"])
+        self.assertTrue(result["state"]["power"])
+        self.assertEqual(result["state"]["experimental_channels"]["head_power_raw"], 0)
+        self.assertEqual(result["requested"], {"power": True, "brightness": 123})
+        self.assertEqual(result["actual"], result["requested"])
+
+    def test_side_light_reports_requested_actual_and_firmware_clamp(self):
+        app = self.make_app(experimental_side_light=True)
+        for requested in (10, 20, 24, 25, 255):
+            with self.subTest(requested=requested):
+                result = app.side_light({"brightness": requested})
+                self.assertTrue(result["protocol_verified"])
+                self.assertTrue(result["candidate_readback_matched"])
+                self.assertTrue(result["head_fields_preserved"])
+                self.assertFalse(result["verified"])
+                self.assertEqual(result["requested"], {"brightness": requested})
+                self.assertEqual(result["actual"], {"brightness": max(25, requested)})
+                self.assertEqual(result["brightness_clamped"], requested < 25)
+                self.assertEqual(result["steps"][0]["requested"], requested)
+                self.assertEqual(result["steps"][0]["actual"], max(25, requested))
+
+    def test_side_light_head_corruption_fails_and_stops_the_sequence(self):
+        for key, value in (("head_power_raw", 1), ("head_brightness_raw", 51), ("head_color_temp_raw", 3000)):
+            with self.subTest(key=key):
+                app = self.make_app(experimental_side_light=True)
+                original = app.lamp.write_side_light
+                def corrupt(changes):
+                    original(changes)
+                    app.lamp.arm[key] = value
+                with patch.object(app.lamp, "write_side_light", side_effect=corrupt) as writer:
+                    result = app.side_light({"power": True, "brightness": 178})
+                writer.assert_called_once_with({"brightness": 178})
+                self.assertFalse(result["ok"])
+                self.assertFalse(result["protocol_verified"])
+                self.assertFalse(result["head_fields_preserved"])
+                self.assertFalse(result["verified"])
+                self.assertEqual(result["state"]["experimental_channels"]["arm_power_raw"], 0)
+
+    def test_side_light_ignored_write_is_a_failure(self):
+        app = self.make_app(experimental_side_light=True)
+        with patch.object(app.lamp, "write_side_light") as writer:
+            result = app.side_light({"power": True, "brightness": 178})
+        writer.assert_called_once_with({"brightness": 178})
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["candidate_readback_matched"])
+        self.assertFalse(result["protocol_verified"])
+        self.assertTrue(result["head_fields_preserved"])
+
+    def test_side_light_power_must_preserve_previously_written_brightness(self):
+        app = self.make_app(experimental_side_light=True)
+        original = app.lamp.write_side_light
+        def corrupt(changes):
+            original(changes)
+            if "power" in changes:
+                app.lamp.arm["arm_brightness_raw"] = 51
+        app.lamp.write_side_light = corrupt
+        result = app.side_light({"power": True, "brightness": 178})
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["protocol_verified"])
+        self.assertFalse(result["candidate_readback_matched"])
+        self.assertTrue(result["head_fields_preserved"])
+        self.assertEqual(result["actual"]["brightness"], 51)
+
+    def test_side_light_validates_all_fields_before_any_write(self):
+        app = self.make_app(experimental_side_light=True)
+        with patch.object(app.lamp, "write_side_light") as writer, patch.object(app.lamp, "query") as query:
+            for changes in ({}, {"power": True, "brightness": 9}, {"power": 1}, {"brightness": True}, {"color_temp": 4000}):
+                with self.subTest(changes=changes), self.assertRaises(ValueError):
+                    app.side_light(changes)
+        writer.assert_not_called()
+        query.assert_not_called()
+
+    def test_main_apply_opens_head_while_side_is_already_on(self):
+        app = self.make_app(experimental_side_light=True)
+        app.lamp.write_side_light({"power": True})
+        app.lamp.write_side_light({"brightness": 178})
+        before = app.lamp.query()["experimental_channels"]
+        with patch.object(app.lamp, "write", side_effect=AssertionError("legacy write")), patch.object(app.lamp, "write_head", wraps=app.lamp.write_head) as head, patch.object(app.lamp, "query", wraps=app.lamp.query) as query:
+            result = app.control({"power": True, "brightness": 51, "color_temp": 3000})
+        self.assertEqual([call.args[0] for call in head.call_args_list], [{"brightness": 51}, {"color_temp": 3000}, {"power": True}])
+        self.assertEqual(query.call_count, 4)
+        channels = result["state"]["experimental_channels"]
+        self.assertTrue(result["state"]["power"])
+        self.assertEqual(channels["head_power_raw"], 1)
+        self.assertEqual(channels["head_brightness_raw"], 51)
+        self.assertEqual(channels["head_color_temp_raw"], 3000)
+        for key in ("arm_power_raw", "arm_brightness_raw"):
+            self.assertEqual(channels[key], before[key])
+
+    def test_main_parameters_while_head_is_off_do_not_touch_either_power(self):
+        for side_on in (False, True):
+            with self.subTest(side_on=side_on):
+                app = self.make_app(experimental_side_light=True)
+                app.lamp.write_side_light({"power": side_on})
+                with patch.object(app.lamp, "write", side_effect=AssertionError("legacy write")), patch.object(app.lamp, "write_head", wraps=app.lamp.write_head) as head, patch.object(app.lamp, "write_side_light", side_effect=AssertionError("side write")):
+                    result = app.control({"brightness": 51, "color_temp": 3000})
+                self.assertEqual([call.args[0] for call in head.call_args_list], [{"brightness": 51}, {"color_temp": 3000}])
+                channels = result["state"]["experimental_channels"]
+                self.assertEqual(channels["head_power_raw"], 0)
+                self.assertEqual(channels["arm_power_raw"], int(side_on))
+                self.assertEqual(channels["arm_brightness_raw"], 102)
+                self.assertEqual(result["state"]["power"], side_on)
+                self.assertEqual(result["state"]["brightness"], 51)
+                self.assertEqual(result["state"]["color_temp"], 3000)
+
+    def test_main_apply_checks_head_power_even_when_overall_power_is_on(self):
+        app = self.make_app(experimental_side_light=True)
+        app.lamp.write_side_light({"power": True})
+        original = app.lamp.write_head
+        app.lamp.write_head = lambda changes: original(changes) if "power" not in changes else None
+        with self.assertRaises(VerificationError):
+            app.control({"power": True, "brightness": 51})
+        self.assertTrue(app.state["power"])
+        self.assertEqual(app.state["experimental_channels"]["head_power_raw"], 0)
+
+    def test_head_write_that_changes_side_is_not_reported_success(self):
+        app = self.make_app(experimental_side_light=True)
+        original = app.lamp.write_head
+        def corrupt(changes):
+            original(changes)
+            app.lamp.arm["arm_brightness_raw"] = 178
+        app.lamp.write_head = corrupt
+        with self.assertRaises(VerificationError):
+            app.control({"brightness": 51})
+        self.assertNotIn("brightness", app.verified_fields)
+
+    def test_power_only_keeps_legacy_overall_semantics_without_assuming_head_on(self):
+        app = self.make_app(experimental_side_light=True)
+        def legacy(field, value):
+            self.assertEqual(field, "power")
+            app.lamp.arm["arm_power_raw"] = int(value)
+            app.lamp.arm["head_power_raw"] = 0
+        with patch.object(app.lamp, "write", side_effect=legacy) as writer, patch.object(app.lamp, "write_head", side_effect=AssertionError("dedicated head power")):
+            on = app.control({"power": True})
+            off = app.control({"power": False})
+        self.assertEqual([call.args for call in writer.call_args_list], [("power", True), ("power", False)])
+        self.assertTrue(on["state"]["power"])
+        self.assertEqual(on["state"]["experimental_channels"]["head_power_raw"], 0)
+        self.assertFalse(off["state"]["power"])
+
+    def test_restore_recovers_all_channel_fields_for_each_power_baseline(self):
+        for head_on, arm_on in ((0, 0), (0, 1), (1, 0), (1, 1)):
+            with self.subTest(head_on=head_on, arm_on=arm_on):
+                lamp = SimulatedLamp(experimental_side_light=True)
+                lamp.arm.update({"head_power_raw": head_on, "arm_power_raw": arm_on, "head_brightness_raw": 51, "head_color_temp_raw": 3000, "arm_brightness_raw": 178})
+                app = LampApplication(lamp)
+                self.addCleanup(app.close)
+                initial = app.snapshot(refresh=True)["initial_state"]
+                lamp.arm.update({"head_power_raw": 1 - head_on, "arm_power_raw": 1 - arm_on, "head_brightness_raw": 200, "head_color_temp_raw": 5000, "arm_brightness_raw": 25})
+                app.set_timer(1)
+                with patch.object(lamp, "write", side_effect=AssertionError("global POWER breaks independent states")), patch.object(lamp, "write_head", wraps=lamp.write_head) as head, patch.object(lamp, "write_side_light", wraps=lamp.write_side_light) as side:
+                    restored = app.restore()
+                self.assertTrue(restored["protocol_verified"])
+                self.assertTrue(restored["channels_restored"])
+                self.assertEqual(restored["state"]["experimental_channels"], initial["experimental_channels"])
+                for field in ("power", "brightness", "color_temp"):
+                    self.assertEqual(restored["state"][field], initial[field])
+                self.assertEqual([call.args[0] for call in head.call_args_list], [{"brightness": 51}, {"color_temp": 3000}, {"power": bool(head_on)}])
+                self.assertEqual([call.args[0] for call in side.call_args_list], [{"brightness": 178}, {"power": bool(arm_on)}])
+                self.assertIsNone(app.timer_deadline)
+
+    def test_restore_ignored_channel_write_fails(self):
+        app = self.make_app(experimental_side_light=True)
+        app.lamp.arm["arm_brightness_raw"] = 178
+        with patch.object(app.lamp, "write_side_light"):
+            with self.assertRaises(VerificationError):
+                app.restore()
+
+    def test_channel_baseline_and_snapshots_do_not_alias_mutable_state(self):
+        app = self.make_app(experimental_side_light=True)
+        snapshot = app.snapshot()
+        snapshot["initial_state"]["experimental_channels"]["arm_brightness_raw"] = 255
+        snapshot["state"]["experimental_channels"]["head_power_raw"] = 1
+        self.assertEqual(app.initial_state["experimental_channels"]["arm_brightness_raw"], 102)
+        self.assertEqual(app.state["experimental_channels"]["head_power_raw"], 0)
+
+    def test_simulator_power_is_or_and_legacy_side_brightness_does_not_change_head(self):
+        lamp = SimulatedLamp(experimental_side_light=True)
+        for head, arm in ((0, 0), (0, 1), (1, 0), (1, 1)):
+            lamp.arm.update({"head_power_raw": head, "arm_power_raw": arm})
+            self.assertEqual(lamp.query()["power"], bool(head or arm))
+        lamp.arm.update({"head_power_raw": 0, "arm_power_raw": 1})
+        lamp.write("brightness", 51)
+        state = lamp.query()
+        self.assertEqual(state["brightness"], 102)
+        self.assertEqual(state["experimental_channels"]["arm_brightness_raw"], 51)
+        lamp.write_head({"brightness": 178})
+        self.assertEqual(lamp.query()["brightness"], 178)
+        self.assertEqual(lamp.arm["head_power_raw"], 0)
+
+    def test_simulator_blocks_read_only_and_combined_channel_writes(self):
+        readonly = SimulatedLamp(read_only=True, experimental_side_light=True)
+        baseline = dict(readonly.arm)
+        for action in (lambda: readonly.write("power", True), lambda: readonly.write_side_light({"power": True}), lambda: readonly.write_head({"brightness": 51})):
+            with self.assertRaises(LampError):
+                action()
+        self.assertEqual(readonly.arm, baseline)
+        lamp = SimulatedLamp(experimental_side_light=True)
+        for writer in (lamp.write_side_light, lamp.write_head):
+            with self.assertRaises(ValueError):
+                writer({"power": True, "brightness": 51})
+        self.assertEqual(lamp.arm, baseline)
+        disabled = SimulatedLamp()
+        with self.assertRaises(LampError):
+            disabled.write_head({"power": True})
 
     def test_side_light_requires_explicit_experimental_flag(self):
         app = self.make_app()
@@ -111,7 +328,7 @@ class ApplicationTests(unittest.TestCase):
 
     def test_timer_expiry_turns_off_and_clears(self):
         app = self.make_app()
-        app.lamp.state["power"] = True
+        app.lamp.write("power", True)
         app.set_timer(1)
         with app.lock:
             app.timer_deadline = time.monotonic() - 1

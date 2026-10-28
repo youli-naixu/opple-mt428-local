@@ -102,11 +102,11 @@
 
         <section class="main-controls" id="mainControls" aria-labelledby="controlTitle">
           <div class="section-heading"><div><p class="eyebrow">光线控制</p><h2 id="controlTitle">此刻，刚刚好</h2></div><span class="quiet-tag">本地连接</span></div>
-          <div class="power-row"><div><h3>灯光开关</h3><p id="powerHint">正在读取实际开关状态</p></div><button id="powerButton" class="power-toggle" type="button" aria-pressed="false" aria-label="灯光状态待查询" disabled><span class="power-knob" aria-hidden="true"><svg class="icon"><use href="#icon-power"/></svg></span><span id="powerText">读取中</span></button></div>
+          <div class="power-row"><div><h3>灯光总开关</h3><p id="powerHint">正在读取实际开关状态</p></div><button id="powerButton" class="power-toggle" type="button" aria-pressed="false" aria-label="灯光状态待查询" disabled><span class="power-knob" aria-hidden="true"><svg class="icon"><use href="#icon-power"/></svg></span><span id="powerText">读取中</span></button></div>
 
           <div class="slider-field brightness-field">
             <div class="field-heading"><label for="brightnessRange"><svg class="icon" aria-hidden="true"><use href="#icon-sun"/></svg> 亮度</label><output for="brightnessRange" id="brightnessOutput">60<span>%</span></output></div>
-            <input id="brightnessRange" type="range" min="1" max="100" step="1" value="60" aria-describedby="lightDraftHelp" aria-valuetext="60%">
+            <input id="brightnessRange" type="range" min="10" max="100" step="1" value="60" aria-describedby="lightDraftHelp" aria-valuetext="60%">
             <div class="range-labels"><span>柔和</span><span>明亮</span></div>
           </div>
           <div class="slider-field temperature-field">
@@ -117,7 +117,7 @@
           </div>
           <div class="draft-note" id="lightDraftHelp"><span class="draft-indicator" id="draftIndicator" aria-hidden="true"></span><span id="draftStatus">拖动只预览，点击应用后才控制台灯</span></div>
           <button class="button button-primary apply-button" id="applyButton" type="button" disabled><span id="applyButtonText">开灯并应用</span><svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button>
-          <p class="control-footnote">开灯后应用亮度与色温；开关独立控制。副灯已定位协议，实验待验证。</p>
+          <p class="control-footnote">启用分通道时，“开灯并应用”调整主灯，侧灯单独控制；侧灯实测最低原始值25。</p>
           <div class="feedback is-loading" id="feedback"><svg class="icon" aria-hidden="true"><use id="feedbackIcon" href="#icon-info"/></svg><p id="liveStatus" role="status" aria-live="polite" aria-atomic="true">正在查询本地服务，等待设备实际状态…</p></div>
         </section>
       </section>
@@ -151,14 +151,14 @@
       </div>
 
       <section class="card side-light-panel" id="sideLightPanel" aria-labelledby="sideLightTitle" hidden>
-        <div class="section-heading"><div><p class="eyebrow">独立实验通道 / Experimental channel</p><h2 id="sideLightTitle">侧灯 · 实验待验证</h2></div><span class="capability-badge is-experimental">实验性 / Experimental</span></div>
-        <p class="experimental-warning" id="sideLightWarning">已定位协议，实验待验证。查询字段仅为候选，不代表物理验证 / Protocol located; query fields are candidates, not physical verification.</p>
+        <div class="section-heading"><div><p class="eyebrow">独立实验通道 / Experimental channel</p><h2 id="sideLightTitle">侧灯 · 分通道控制</h2></div><span class="capability-badge is-experimental">实验性 / Experimental</span></div>
+        <p class="experimental-warning" id="sideLightWarning">侧灯独立开关、调光及主灯字段保持已通过设备回读；光线效果待目视确认 / Device protocol write/readback tested; visual confirmation pending.</p>
         <p class="side-light-mode" id="sideLightMode"></p>
         <div class="side-light-grid">
           <div><p class="micro-label">查询返回的已知字段 / Known query fields</p><dl class="side-light-channels" id="sideLightChannels"></dl><p class="panel-footnote">仅展示返回的 arm_power_raw、arm_brightness_raw 原始值，不推断开关含义 / Raw values only; no inferred power state.</p></div>
           <div class="side-light-controls">
             <div class="side-light-actions"><button class="button button-outline" id="sideLightOnButton" type="button" aria-describedby="sideLightWarning sideLightMode" disabled>实验开启侧灯</button><button class="button button-outline" id="sideLightOffButton" type="button" aria-describedby="sideLightWarning sideLightMode" disabled>实验关闭侧灯</button></div>
-            <div class="slider-field"><div class="field-heading"><label for="sideLightBrightnessRange">侧灯亮度 · 原始值</label><output id="sideLightBrightnessOutput" for="sideLightBrightnessRange">10</output></div><input id="sideLightBrightnessRange" type="range" min="10" max="255" step="1" value="10" aria-describedby="sideLightWarning sideLightBrightnessHelp" disabled><div class="range-labels"><span>10</span><span>255</span></div></div>
+            <div class="slider-field"><div class="field-heading"><label for="sideLightBrightnessRange">侧灯亮度 · 原始值</label><output id="sideLightBrightnessOutput" for="sideLightBrightnessRange">25</output></div><input id="sideLightBrightnessRange" type="range" min="25" max="255" step="1" value="25" aria-describedby="sideLightWarning sideLightBrightnessHelp" disabled><div class="range-labels"><span>25 · 固件最低值</span><span>255</span></div></div>
             <button class="button button-secondary" id="sideLightApplyButton" type="button" aria-describedby="sideLightWarning sideLightMode" disabled>应用侧灯亮度</button>
             <p class="panel-footnote" id="sideLightBrightnessHelp">滑块仅准备原始值，点击才发送一次实验指令；缺少对应候选字段时禁用 / One request per click; controls require the corresponding candidate field.</p>
           </div>

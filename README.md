@@ -6,7 +6,7 @@ Local UDP discovery, control tools, a browser demo, and reproducible research no
 
 This project collects the details that were missing from a generic “OPPLE supported” claim: model identity, discovery without the old SKU filter, strict reply validation, an off-state dimming quirk, and a newly located **independent arm/background-light protocol**.
 
-**Status: alpha.** Power, legacy brightness, and color-temperature commands were tested on one physical SKU `0x50061` unit. **Independent side-light writes have not been hardware-tested.** They are disabled by default and isolated behind explicit experimental/write flags. Do not interpret a candidate state field or a successful simulator run as physical verification.
+**Status: alpha; channel updates are Unreleased.** Legacy controls and dedicated side/head single-parameter writes have been tested on one physical SKU `0x50061` unit: **physical-device protocol write/readback confirmed; visual validation pending**. Actual light output, physical channel mapping, and brightness calibration were not independently observed by eye or instrument. Side control remains experimental because firmware coverage and visual validation are limited; real-device mode stays read-only by default. See the dated [observations](docs/observations.md).
 
 Independent community research; not affiliated with, endorsed by, or sponsored by OPPLE, Huawei, Broadlink, or Home Assistant. No vendor APK, decompiled code, firmware, SDK, logo, credentials, or raw network captures are included.
 
@@ -77,33 +77,36 @@ When you intentionally want real light control:
 python -m opple_mt428 serve --ip 192.0.2.42 --mac 02:00:00:00:00:01 --allow-write
 ```
 
-**Light-change warning:** on the tested firmware, dimming while off is ignored. Applying brightness/color temperature may briefly power on the lamp to set parameters before restoring its off state. “Power on and apply” leaves it on. Do not enable writes during a quiet/nighttime investigation.
+**Light-change warning:** on the tested firmware, the **legacy** off-state dimming path may turn the lamp on, apply brightness/CCT, then restore off. Without the experimental flag, this behavior remains unchanged. Dedicated channel parameters can update stored values while both channels report off; that protocol observation does not prove the operation stayed optically dark. “Power on and apply” explicitly enables the head in experimental mode. Avoid writes during a quiet/nighttime investigation.
 
-## Side light: the useful new lead
+## Side light: protocol readback confirmed, visual validation pending
 
-Static analysis of the vendor-distributed **OPPLE Smart Lighting / 欧普智慧灯光** Android app links **SKU `0x50061` → `WifiDesklamp_0061`**, with dedicated arm-control UI methods and a local UDP command **`0x03450000`**. It provides separate arm power/brightness and head power/brightness/CCT fields. Candidate QUERY body offsets are **52–57**.
+Static analysis of the vendor-distributed **OPPLE Smart Lighting / 欧普智慧灯光** Android app links **SKU `0x50061` → `WifiDesklamp_0061`**, with dedicated arm-control methods and UDP command **`0x03450000`**. Separate side power/brightness and head power/brightness/CCT map to QUERY body offsets **52–57**. The [research notes](docs/research.en.md#side-light-static-analysis) retain the distribution link, package/version, SHA-256, methods, and field tables; vendor code/assets are not redistributed.
 
-Evidence includes the official distribution link, package/version, SHA-256, relevant classes/methods, and field tables in the [research notes](docs/research.en.md#side-light-static-analysis). Vendor code/assets are not redistributed. This is stronger than guessing a command from the product name, but **current-firmware placeholder behavior, physical channel mapping, and collateral effects still need daylight verification**.
+Authorized daytime tests now confirm single-parameter protocol writes/readback on the physical unit. Side power followed `off → on → off`, and raw brightness `51 / 178 / 102` matched while head fields stayed `off / 28 / 2700 K`. Dedicated head power, brightness `51`, and CCT `4000 K` also read back correctly. Side requests `10 / 20` were clamped to **25**; `25 / 255` returned exactly. Side off/on preserved an enabled head, and head off preserved an enabled side. Legacy `power@1` is aggregate: side-only on still reports `true`; both off reports `false`.
 
-A later [read-only observation](docs/observations.md) found candidate head fields consistent with the legacy state in one snapshot; this still does not validate independent arm writes or placeholder semantics.
+**Firmware limitation:** a single device payload containing side power + brightness ignores brightness. The Unreleased backend splits channel changes into **one parameter per payload**, retains the other template fields, and QUERY-verifies each step. Dedicated head/side brightness and head CCT can update while both channels are off, unlike legacy dimming. With experimental mode enabled, brightness/CCT controls use the head channel; including `power:true` explicitly turns the head on. Power-only controls keep legacy semantics. Restore covers both channels' known initial fields only when an initial channel snapshot exists; otherwise it falls back to legacy restore.
 
-To inspect candidate read-only fields:
+The [observations](docs/observations.md) preserve the earlier nighttime no-write stage and summarize the separately authorized daytime results. Light output, physical channel correspondence, photometry, and brightness mapping remain unobserved; one unit does not establish other-firmware compatibility.
+
+To inspect experimental fields without writing:
 
 ```sh
 python -m opple_mt428 status --ip 192.0.2.42 --mac 02:00:00:00:00:01 --experimental-side-light
 ```
 
-Experimental side-light writes require **both** `--allow-write` and `--experimental-side-light`. The panel sends a single request, reports only candidate readback matching, and never upgrades it to “hardware verified.” No command enumeration or unknown-field brute force is implemented.
+Real dedicated-channel writes require **both** `--allow-write` and `--experimental-side-light`. Side API responses keep `verified:false`, adding `protocol_verified`, `head_fields_preserved`, `requested`, `actual`, and `brightness_clamped`, with `candidate_readback_matched` retained for compatibility. See the [API contract](docs/api.md). No command enumeration or unknown-field brute force is implemented.
 
 ## Capabilities and limits
 
 | Feature | Evidence / implementation |
 | --- | --- |
 | Read-only discovery and legacy status | Physical unit tested; replies validated |
-| Power, raw brightness `0..255`, CCT `2700..6500 K` | Writes/readback tested on one unit; no physical photometry |
-| Independent side/arm light | Vendor-app static evidence; experimental adapter, not hardware-tested |
+| Power, raw brightness `0..255`, CCT `2700..6500 K` | Legacy write/readback tested; dedicated head single-field tests added; no optical calibration |
+| Independent side/arm light | Physical-device single-field write/readback confirmed; observed brightness floor 25; experimental, visual validation pending |
 | Local scenes | Combinations of known values, not vendor-native modes |
-| Local off timer / restore | Process-owned; computer sleep/exit/restart can cancel or delay execution |
+| Restore | Known initial side/head fields with experimental channel snapshot; otherwise legacy fallback; unknown vendor state excluded |
+| Local off timer | Process-owned; computer sleep/exit/restart can cancel or delay execution |
 | Vendor reading/writing/computer/favorite modes | Documented; full native protocol unimplemented |
 | Vendor device-stored schedule/countdown, Pomodoro, button indicator | Documented or reported; unimplemented |
 | Cloud-free first-time Wi-Fi provisioning | Not established; preserve an already provisioned device |

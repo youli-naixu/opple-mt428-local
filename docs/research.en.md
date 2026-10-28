@@ -2,7 +2,7 @@
 
 [简体中文](research.zh-CN.md) · [Architecture](architecture.en.md)
 
-Compiled on 2026-10-28 for **MT428-D0.5×36+0.2×21-WTT**. This document summarizes existing device tests and public references. Preparing these documents did not involve connecting to the lamp, sending packets, signing into private accounts, or repeating hardware tests. Findings apply to the tested device and its firmware at the time, not to every MT428, HiLink, or Opple product.
+Updated on 2026-10-28 for **MT428-D0.5×36+0.2×21-WTT**, including authorized daytime channel tests. This document summarizes saved device-test records, maintainer-supplied follow-up results, and public references. Preparing it did not involve connecting to the lamp or API, sending packets, signing into private accounts, or repeating hardware tests. Findings apply to one tested device and its firmware at the time, not to every MT428, HiLink, or Opple product. Channel adapter changes are documented under Unreleased; the published alpha's history is unchanged.
 
 Every example lamp address is `192.0.2.42`, and every example device MAC is `02:00:00:00:00:01`. The address belongs to the **TEST-NET-1 documentation range** in RFC 5737; the MAC is an invented, locally administered unicast address. Replace both with the address and MAC of an authorized device before deployment; they cannot validate a real lamp.[N4] Real device identifiers, user networks, cloud addresses, account material, and raw packets are excluded. `238.238.238.238:5683` is an observed protocol multicast constant, explained in section 6, rather than the example lamp address.
 
@@ -10,7 +10,7 @@ Every example lamp address is `192.0.2.42`, and every example device MAC is `02:
 
 | Tag | Evidence level | What it supports and its limits |
 | --- | --- | --- |
-| T | Device-tested | Responses, readback after writes, or controlled behavior in existing records; these are not new tests or optical instrument measurements. |
+| T | Device-tested protocol evidence | Responses, write/readback transitions, or controlled behavior in existing records. Channel results mean physical-device protocol write/readback confirmed; visual validation pending. They do not establish emitted light, physical channel mapping, photometry, or brightness calibration. |
 | S | Public source code | Inspectable implementations, constants, and ranges; code support does not establish compatibility with this model. |
 | O | Official documentation | Product features and official operating procedures; these do not directly identify UDP commands. |
 | A | Static analysis of an officially distributed APK | SKU branches, UI calls, and protocol fields in the identified App version. The APK is not public source code, and a static path does not establish acceptance or execution by current firmware. |
@@ -25,26 +25,26 @@ Discovery reported `CLASS_SKU = 0x50061` and **raw version field `0x210`**. Do n
 | Capability | Current evidence | Findings and limitations |
 | --- | --- | --- |
 | UDP unicast discovery and query | T + S | SEARCH and QUERY succeeded on `55001`; records include matching response types, request/response serials, target identity, and CRC. This path did not require cloud account credentials. |
-| Power | T + S | Explicit on and off operations succeeded with readback. Whether this generic power field also affects the side light has not been separately verified visually. |
-| Main-light brightness | T + S | Writes and readback succeeded. The protocol represents brightness with a `0–255` byte; percentages are a linear conversion, not a calibration against the official App slider or illuminance. Every value has not been tested. |
-| Main-light color temperature | T + S + O | Tested request points include `2700 / 4000 / 5000 / 6500 K`; the adapter range is `2700–6500 K`. Reported values may differ from requests. Every Kelvin value and the actual light spectrum have not been tested.[H1] |
+| Power | T + S + A | On/off writes succeeded with readback. Legacy `power@1` is aggregate: either channel on reports true; both off reports false. Dedicated channel power is separate; actual light was not independently observed. |
+| Main-light brightness | T + S + A | Legacy writes and dedicated head brightness `51` read back successfully. The byte represents raw `0–255`; percentages are not calibrated against the App slider or illuminance. Not every value was tested. |
+| Main-light color temperature | T + S + O + A | Legacy request points include `2700 / 4000 / 5000 / 6500 K`; dedicated head `4000 K` also read back successfully. Adapter range `2700–6500 K` is not spectral calibration or an exhaustive test.[H1] |
 | Local scene presets | T | Combinations of supported power, brightness, and color temperature were applied and read back; these are not native reading, writing, computer, or favorite modes. |
 | In-process off timer | T | Setting, cancellation, and one actual 1-minute expiry were verified. The service process executes the timer; stopping or restarting it loses the timer. This is not a countdown stored in the lamp. |
-| Restore first observed state | T | Restores the three fields first read during the current service run; this is not a factory backup and cannot restore unknown side-light, mode, or schedule state. |
-| Independent arm / side light | O + A; not device-tested | A `0x50061`-specific static App path, candidate write command, and query offsets are available. Current-firmware control is not established; see sections 3 and 5. |
+| Restore first observed state | T (field restoration); Unreleased adapter | With experimental mode and an initial channel snapshot, restore covers known side power/brightness and head power/brightness/CCT. Otherwise it falls back to legacy three-field restore; unknown initial channel, mode, and schedule state cannot be reconstructed. |
+| Independent arm / side light | O + A + T | Single-parameter side power and brightness writes/readback confirmed on one physical unit, including head-field preservation. Observed brightness clamp `10/20 → 25`; visual validation and other-firmware coverage remain pending. See sections 3 and 5. |
 | Native modes / favorite | O; local mapping unknown | Officially documented features, without verified local mappings for this model. |
 | Native recurring schedules, countdown, Pomodoro | O; local mapping unknown | Local scenes and process timers must not be presented as native implementations. |
 | Touch-key indicators, independent “night light” | Historical corroboration / unknown | A review of the complete model provides an indicator-setting clue. An independent night-light feature is not established by the official documentation or local testing for this model.[P2] |
 | Internet disconnected, offline provisioning after factory reset, other firmware | Not tested | Using local commands without cloud credentials does not establish a fully offline device lifecycle or compatibility after firmware updates. |
 | Persistent router deployment, ESP management page, MCP | H | Future architecture goals described in the architecture document, not completed hardware acceptance tests. |
 
-**Warning when adjusting an off lamp: the tested firmware ignores dimming while off. The existing compatibility sequence turns the lamp on → applies brightness / color temperature → turns it off again. The lamp may visibly light up or flash during this operation.** A final off state does not mean the operation remained dark throughout. Restore, combined controls, scenes, and automation must account for this behavior whenever they adjust an off lamp. A connection failure can also prevent restoration to off, so unconditional recovery cannot be promised. Avoid this sequence at night, or execute it only after explicit acceptance of temporary illumination. New interfaces should offer a policy that rejects temporary power-on and report the steps actually performed.
+**Legacy off-state warning:** the tested legacy dimming path needs the compatibility sequence on → apply brightness/CCT → off, so it may illuminate the lamp temporarily. This remains the fallback without experimental channels. Daytime records show that dedicated channel brightness and head CCT can update stored fields with both power fields off, without a protocol power-on step; no independent optical observation establishes darkness throughout. Connection failure can prevent restoration, and any write may have an unknown outcome. The historical nighttime investigation prohibited writes; later authorized daytime tests are a separate stage.
 
 ### read-only and simulate
 
 - **read-only (default)**: the real-device path permits targeted SEARCH and QUERY only. It rejects power, brightness, and color-temperature writes, including indirect writes from scenes, restore, and timer expiry. It still sends query traffic; it is neither passive observation nor offline simulation. Disabling UI buttons alone is insufficient: the protocol send layer must enforce the restriction.
 - **simulate**: synthetic state and controlled faults exercise parsing, APIs, queueing, timers, and the off-lamp compatibility sequence. It must send no packets to the lamp, multicast group, or cloud services. Results must identify their simulated origin and must not be counted as T-level hardware evidence.
-- **Experimental side-light gates**: `--experimental-side-light` permits experimental parsing / capability display. Real experimental writes additionally require explicit `--allow-write`; neither gate alone permits them. Enabling parsing does not enable writes or establish device-tested side-light support. These gates do not authorize unknown writes during the current stage; no such writes are permitted tonight.
+- **Experimental channel gates**: `--experimental-side-light` enables experimental parsing and the dedicated-channel path; real writes also require `--allow-write`. Neither flag alone permits dedicated-channel writes. Enabling a flag is not evidence of compatibility. Single-parameter write/readback is now recorded for one physical unit, but visual validation and firmware-variant coverage remain pending. During the historical nighttime stage, writes were prohibited and only SEARCH/QUERY were sent; separate explicit authorization covered the subsequent daytime tests.
 
 These are the public release's mode and gating contracts. Consult the README and the relevant release's tests for startup details. Neither mode was rerun for this document, and historical prototype test counts are not substituted for the public project's results.
 
@@ -63,12 +63,13 @@ This summary draws on original `pyoppleio`, the legacy branch, and existing devi
 | POWER | `0x03110000` | One byte: `0` off, `1` on. |
 | BRIGHTNESS | `0x03130000` | One raw brightness byte; source code accepts `0–255`. |
 | COLOR_TEMP | `0x031b0000` | Two bytes, big-endian, Kelvin; adapter range `2700–6500`. |
+| Dedicated channels | `0x03450000` | 10-byte template; change one parameter per payload and QUERY-verify each write, as below. |
 
-**Only three fields in the 58-byte query body have been cross-checked on the current firmware and can be treated as reliable state.** Additional APK evidence suggests candidate interpretations at offsets `52–57`, described below; these must not be promoted to reliable current-firmware state. A changing byte elsewhere likewise must not be labeled as side-light, mode, schedule, clock, or Pomodoro state on that basis alone.
+The three legacy fields below were the original cross-checked state. Authorized daytime writes now also corroborate channel QUERY offsets `52–57` at the protocol level, with visual validation pending. These remain separately exposed experimental channel fields rather than silently replacing legacy state. Unexplained bytes must not be assigned mode, schedule, clock, or Pomodoro meanings merely because they change.
 
 | Query field | Body offset / slice | Length and meaning |
 | --- | --- | --- |
-| `power` | `1`, or `[1:2]` | 1 byte; supported values `0 / 1`. |
+| `power` | `1`, or `[1:2]` | 1 byte, `0 / 1`; aggregate power on this unit, not dedicated head power. |
 | `brightness` | `2`, or `[2:3]` | 1 raw-value byte. |
 | `cct` | `7`, or `[7:9]` | 2 bytes, big-endian, device-reported color temperature. |
 
@@ -93,30 +94,34 @@ Writes to this device are confirmed by QUERY readback; a successful UDP send is 
 
 <a id="side-light-static-analysis"></a>
 
-### SKU-specific arm / side-light candidate protocol: A-level evidence only
+### SKU-specific arm / side-light protocol: static evidence plus device readback
 
-Static analysis of the officially distributed App provides a more specific candidate mapping.[A1] `SKUUtil.getDeiveTypeBySku` maps `0x50061` to `WifiDesklamp_0061`. The `ArmControl` UI for arm control / power / brightness calls `SEND_ARM_OPENCLOSE` and `SEND_ARM_BRIGHT`. The send path uses `SEND_SMARTFUNCTION`, message type **`0x03450000`**, and local UDP55001. The following independently summarizes protocol facts; it is neither decompiled code nor a raw packet.
+Static analysis of the officially distributed App supplied the mapping.[A1] `SKUUtil.getDeiveTypeBySku` maps `0x50061` to `WifiDesklamp_0061`. The `ArmControl` UI calls `SEND_ARM_OPENCLOSE` and `SEND_ARM_BRIGHT`; the send path uses `SEND_SMARTFUNCTION`, message type **`0x03450000`**, and local UDP55001. Subsequent authorized daytime tests added T-level single-parameter write/readback evidence. This is an independent protocol summary, not decompiled code or a raw packet.
 
-| Candidate control-body field | Offset / slice | Meaning in the static path |
+| Control-body field | Offset / slice | Static meaning and recorded device result |
 | --- | --- | --- |
-| Product / template prefix | `[0:4]` | A four-byte prefix containing the product SKU; the complete template is **10 bytes** long. |
-| arm power | `4` | `0 / 1`; the template uses `2` for an unchanged switch. |
-| arm brightness | `5` | Raw `10–255`; the template uses `0` for unchanged brightness. |
-| head power | `6` | `0 / 1`; the template uses `2` for an unchanged switch. |
-| head brightness | `7` | Raw brightness; the template uses `0` for unchanged brightness. |
-| head color temperature | `[8:10]` | Two bytes, big-endian; the template uses `0` for unchanged color temperature. |
+| Product / template prefix | `[0:4]` | Four-byte product SKU prefix; template length **10 bytes**. |
+| arm/side power | `4` | `0 / 1`; unchanged template value `2`. Off → on → off read back successfully. |
+| arm/side brightness | `5` | App raw range `10–255`; unchanged template value `0`. `51/178/102` matched; `10/20` clamped to `25`; `25/255` matched. |
+| head power | `6` | `0 / 1`; unchanged template value `2`. Independent single-field transitions read back successfully. |
+| head brightness | `7` | Raw brightness; unchanged template value `0`. Request `51` read back successfully. |
+| head color temperature | `[8:10]` | Two-byte big-endian; unchanged template value `0`. Request `4000 K` read back successfully. |
 
-Here, `arm` and `head` are App-internal field names. Their physical correspondence to side and main lights, and any coupling, still require visual differential testing. **The `2 / 0 / 0` values are facts about the App template; whether current firmware interprets them as “preserve other fields” is unverified.** They do not justify sending a purported side-light-only combination to a real device. Off-state side-light behavior also cannot be inferred from the older three-field controls.
+With **one parameter changed per payload**, the other App-template values preserved returned channel fields in the recorded tests. Side power/brightness tests preserved head `0 / 28 / 2700 K`; side off/on also preserved an enabled head, and dedicated head writes preserved side fields. This confirms protocol preservation for these cases on one unit. `arm` and `head` remain App-derived names: their emitted light and physical correspondence were not independently observed by eye or instrument.
 
-| Candidate QUERY-body field | Decimal offset / slice | Evidence boundary |
+**Combined-payload limitation:** side power + brightness in one payload caused brightness to be ignored, including an earlier API restoration attempt. The Unreleased backend splits channel requests and restore operations into one parameter per payload, retaining other template values and QUERY-verifying every step. A multi-field HTTP request is not an atomic device transaction. Dedicated head/side brightness and head CCT can update stored values with both channel power fields off; this differs from the historical legacy dimming workaround and does not prove optical darkness.
+
+| QUERY-body field | Decimal offset / slice | Current evidence boundary |
 | --- | --- | --- |
-| arm power | `52` | Static APK parser mapping, not cross-checked on current firmware. |
-| arm brightness | `53` | Same limitation. |
-| head power | `54` | Same limitation; does not replace tested `power@1`. |
-| head brightness | `55` | Same limitation; does not replace tested `brightness@2`. |
-| head color temperature | `[56:58]` | Two bytes, big-endian; does not replace tested `cct@[7:9]`. |
+| arm/side power | `52` | Static mapping plus single-parameter write/readback on the tested unit. |
+| arm/side brightness | `53` | Same; report actual raw value, including the observed clamp to `25`. |
+| head power | `54` | Dedicated head state; distinct from aggregate legacy `power@1`. |
+| head brightness | `55` | Dedicated readback corroborated; keep separately exposed from legacy brightness. |
+| head color temperature | `[56:58]` | Two-byte big-endian; dedicated write/readback corroborated, not a spectrum measurement. |
 
-Experimental parsing should expose candidate `side_light` data separately with `experimental` and `apk_static` provenance. It must not silently overwrite the three verified state fields. This evidence makes research more focused, but real-device side-light support remains unverified, and real writes remain subject to both gates and the current no-write stage.
+Legacy `power@1` remains true with only the side on and becomes false with both channels off; it is not head state. Experimental channels remain under `state.experimental_channels`, with evidence describing **physical-device protocol write/readback confirmed; visual validation pending**. Side responses retain `verified:false` and `candidate_readback_matched`, adding `protocol_verified`, `head_fields_preserved`, `requested`, `actual`, and `brightness_clamped`. Both gates remain because other firmware and optical behavior are unverified. See [observations](observations.md) and the [Unreleased API contract](api.md).
+
+With experimental mode enabled, brightness/CCT control uses dedicated head fields; including `power:true` explicitly enables the head. Power-only control retains legacy semantics. Restore covers side power/brightness and head power/brightness/CCT only when the initial channel snapshot is known; missing channel state or a disabled flag uses the original legacy fallback, which cannot reconstruct unknown initial channels.
 
 ## 4. Applicability of public implementations
 
@@ -145,17 +150,21 @@ The official App guide lists overall power, main-light brightness, side light, r
 | Computer | Main light off, side light defaults to `40%` and is dimmable. | Background light `30%`. |
 | Favorite | Defaults to `3000 K`, brightness `40%`, side light on; customizable. | No separate favorite key is listed in this guide. |
 
-The App guide specifies main-light dimming of `10–100%` and favorite-mode color temperature of `2700–6500 K`. These are not the same scale as the raw protocol byte range. It describes overall power as controlling main and side lights together; this project's generic power-field tests do not independently establish that side-light behavior.
+The App guide specifies main-light dimming of `10–100%` and favorite-mode color temperature of `2700–6500 K`. These are not the same scale as the raw protocol byte range. It describes overall power as controlling main and side lights together. Daytime protocol records now distinguish aggregate legacy `power@1` from dedicated head/side power; they do not independently establish emitted light or official-App behavior.
 
 The same guide describes one native schedule with daily repetition, with the next scheduled occurrence remaining effective after loss of network access. It describes a native countdown up to `23 hours 59 minutes`, remaining effective for that occurrence after disconnection and continuing even if the lamp is switched off early. Pomodoro includes a `25-minute` session, pause, and completion indications.[H1] These are official feature descriptions. They do not establish that all execution logic resides in the lamp, or that this adapter implements configuration interfaces for them.
 
-### Side light: unresolved research
+### 2026-10-28 daytime update and remaining research
 
 The side light is documented officially and appears in third-party physical reviews. A 2020-02-27 review names the complete model in its title and body, corroborating model identity and the side light. A 2021-12-21 article mentions both AI Life and “欧普智慧灯光” (Opple's lighting App), and reports side-light dimming in the latter. Its body does not identify the complete model, and comments include unsuccessful connection reports.[P1][P2] This does not guarantee the same dual-App path for the tested lamp, current Apps, or firmware.
 
-New A-level evidence supplies SKU-specific candidate side-light commands and QUERY offsets; they are no longer without leads. Unknowns remain: current-firmware acceptance, preservation semantics of placeholder values, the physical lights represented by arm / head and their side effects, accuracy of candidate readback, native scene codes, favorite storage, native schedule / countdown / Pomodoro interfaces, and execution responsibilities. This static path does not establish complete native local support. Associations between other unexplained bytes and features remain H-level hypotheses.
+Authorized daytime tests now establish single-parameter command acceptance, matching channel readback, and preservation of the other channel's returned fields in the tested cases. The [observation table](observations.md) records side switching/brightness, dedicated head controls, aggregate power, off-state parameter storage, combined-payload failure, and later restoration. Follow-up head brightness tests also show `10 → 25`, `25 → 25`, and `255 → 255` with head power still off and side fields preserved. Together with side `10/20 → 25`, these are sampled clamp observations for both channels, not an exhaustive range test. The five numeric channel fields were subsequently confirmed restored to baseline.
 
-**Unknown-feature writes are frozen at this stage. Do not blindly enumerate commands, offsets, or payloads. Avoid nighttime exploration that could illuminate the side light or activate a mode. The following is a future daytime plan with an operator present; it has not been executed.**
+Still unverified are actual light output and physical arm/head correspondence, photometry and brightness mapping, other firmware, native scene codes, favorite storage, schedule/countdown/Pomodoro interfaces, and execution responsibilities. Protocol readback is not complete native local support; unexplained bytes remain H-level hypotheses.
+
+### Historical nighttime boundary and proposed experiment plan
+
+**During the earlier nighttime stage, unknown-feature writes were frozen and no lamp-changing command was sent.** The plan below was unexecuted at that stage. Later explicit daytime authorization permitted the protocol tests summarized above; the plan is retained as a historical snapshot, not a current ban on those authorized tests or a claim that its visual/App/key comparisons were completed. Blind enumeration of unknown commands or payloads is not part of this project.
 
 | Step | Single-variable experiment and record | Acceptance / stop condition |
 | --- | --- | --- |

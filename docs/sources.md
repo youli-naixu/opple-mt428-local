@@ -21,7 +21,7 @@ Reviewed on2026-10-28. Links identify evidence, not blanket compatibility. Offic
 - Relevant identifiers: `sdk.util.SKUUtil.getDeiveTypeBySku`, `sdk.device.WIFI.WifiDesklamp_0061`, `com.zhuoapp.opple.activity.spec.desklamp_0061.ArmControl`, `SEND_ARM_OPENCLOSE`, `SEND_ARM_BRIGHT`, `SEND_SMARTFUNCTION`, `BaseDevice.ProcessQueryState`.
 - Findings: explicit `0x50061` mapping; local UDP55001; command `0x03450000`; 10-byte body; candidate state offsets52–57. See [research](research.en.md#side-light-static-analysis) / [中文](research.zh-CN.md).
 
-These are independently summarized interface facts, not vendor source code. No APK/DEX/SDK, class-body dump, image, or extracted profile is redistributed. Side-light behavior on the tested physical firmware remains unverified.
+These are independently summarized interface facts, not vendor source code. No APK/DEX/SDK, class-body dump, image, or extracted profile is redistributed. Subsequent authorized tests confirmed dedicated side/head protocol writes, readback, and unchanged opposite-channel fields on one unit; physical light mapping and optical output remain unobserved. See the dated [observations](observations.md). / 后续白天授权测试已确认分通道协议写入、回读与另一通道字段保持，目视光学验证仍待完成。
 
 ## Community observations / 同型号与双生态记录
 

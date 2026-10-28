@@ -8,15 +8,20 @@ import logging
 import threading
 import time
 from collections import deque
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from .protocol import LampError, now_iso
+from .protocol import LampError, build_channel_body, build_head_body, now_iso
 
 
 LOG = logging.getLogger("opple.demo")
+CHANNEL_FIELDS = {
+    "arm": {"power": "arm_power_raw", "brightness": "arm_brightness_raw"},
+    "head": {"power": "head_power_raw", "brightness": "head_brightness_raw", "color_temp": "head_color_temp_raw"},
+}
 STATIC = Path(__file__).parent / "static"
 SCENES = [
     {"id": "reading", "name": "专注阅读", "brightness_pct": 70, "color_temp": 4000, "description": "中性光 · 70%亮度"},
@@ -78,7 +83,8 @@ class LampApplication:
 
     def _read(self):
         try:
-            self.state = self.lamp.query()
+            # power remains the device's overall (head OR arm) state.
+            self.state = deepcopy(self.lamp.query())
         except (LampError, OSError) as error:
             was_online = self.online
             self.online = False
@@ -90,7 +96,7 @@ class LampApplication:
         self.online = True
         self.error = None
         if self.initial_state is None:
-            self.initial_state = dict(self.state)
+            self.initial_state = deepcopy(self.state)
             self.event("已保存本次启动时状态", "info", "恢复按钮仅恢复本次服务启动后首次读到的状态")
         if was_offline:
             self.event("已连接台灯", "success", "本地发现与状态查询校验通过")
@@ -99,15 +105,15 @@ class LampApplication:
     def capabilities(self):
         items = [
             {"id": "status", "title": "实时状态", "status": "verified" if self.state else "available", "description": "从台灯直接读取，显示最近一次更新时间"},
-            {"id": "power", "title": "灯光开关", "description": "本地开关命令与状态回读已实现；侧灯联动尚未目视确认"},
+            {"id": "power", "title": "灯光开关", "description": "总开关为任一通道开启；单独开关请求使用兼容命令，不保证同时开启两个通道"},
             {"id": "brightness", "title": "主灯亮度", "description": "本地协议0–255级；面板以百分比显示"},
             {"id": "color_temp", "title": "主灯色温", "description": "按本地库2700–6500 K范围请求，以设备回报为准"},
             {"id": "scene", "title": "本地光线场景", "status": "available", "description": "本页组合亮度与色温，不调用原厂模式"},
             {"id": "timer", "title": "定时关灯", "status": "available", "description": "由本机服务计时；关闭服务或重启后取消"},
-            {"id": "restore", "title": "恢复启动时状态", "status": "available", "description": "恢复本次服务首次读取到的开关、亮度和色温"},
-            {"id": "side_light", "title": "侧灯／副灯（实验性）", "status": "experimental", "description": "已定位SKU专用灯臂协议；尚未实机验证，需显式启用实验支持"},
+            {"id": "restore", "title": "恢复启动时状态", "status": "available", "description": "保存通道状态时分别恢复主灯与侧灯；否则恢复旧版开关、亮度和色温"},
+            {"id": "side_light", "title": "侧灯／副灯（实验性）", "status": "experimental", "description": "专用协议写入与回读已实测；物理目视验证待完成，需显式启用实验支持"},
             {"id": "native_reading", "title": "原厂阅读／书写", "status": "unadapted", "description": "官方App分别4000／5000 K，并包含侧灯联动；本页场景只组合已适配参数"},
-            {"id": "native_computer", "title": "原厂电脑模式", "status": "unadapted", "description": "仅侧灯照明；缺少独立侧灯协议，暂不能复现"},
+            {"id": "native_computer", "title": "原厂电脑模式", "status": "unadapted", "description": "官方模式为仅侧灯照明；原厂模式组合尚未适配"},
             {"id": "native_favorite", "title": "原厂最爱模式", "status": "unadapted", "description": "官方支持保存色温、亮度及侧灯开关；本页本地场景不写入原厂最爱"},
             {"id": "native_schedule", "title": "原厂定时与重复", "status": "unadapted", "description": "官方App支持一组可重复定时；设备端计划协议尚未适配"},
             {"id": "native_countdown", "title": "原厂倒计时", "status": "unadapted", "description": "官方最长23小时59分，支持断网继续；本页定时由电脑服务执行"},
@@ -135,8 +141,8 @@ class LampApplication:
                 "experimental_side_light": getattr(self.lamp, "experimental_side_light", False),
                 "message": self.error,
                 "device": self.lamp.identity,
-                "state": dict(self.state) if self.state is not None else None,
-                "initial_state": dict(self.initial_state) if self.initial_state is not None else None,
+                "state": deepcopy(self.state),
+                "initial_state": deepcopy(self.initial_state),
                 "timer": {"active": self.timer_deadline is not None, "seconds_remaining": remaining, "ends_at": self.timer_ends_at},
                 "capabilities": self.capabilities(),
                 "scenes": SCENES,
@@ -149,40 +155,13 @@ class LampApplication:
         with self.lock:
             try:
                 self._read()
-                starting_power = self.state["power"]
-                final_power = changes.get("power", starting_power)
-                needs_light = any(field in changes and not same_value(field, self.state[field], changes[field]) for field in ("brightness", "color_temp"))
-                temporary_power = needs_light and not starting_power and not final_power
-                order = []
-                if not starting_power and (needs_light or final_power):
-                    order.append(("power", True))
-                order.extend((field, changes[field]) for field in ("brightness", "color_temp") if field in changes)
-                if not final_power and (starting_power or needs_light or "power" in changes):
-                    order.append(("power", False))
-                elif final_power and not order and "power" in changes:
-                    order.append(("power", True))
-                temporary_power_attempted = False
-                operation_error = None
-                try:
-                    for field, value in order:
-                        if temporary_power and field == "power" and value is True:
-                            temporary_power_attempted = True
-                        self._write_verified(field, value)
-                        if field == "power" and value is False:
-                            temporary_power_attempted = False
-                except (LampError, OSError) as error:
-                    operation_error = error
-                    raise
-                finally:
-                    # A failed readback can leave stale OFF state after a successful ON packet.
-                    if temporary_power_attempted:
-                        try:
-                            self._write_verified("power", False)
-                        except (LampError, OSError) as restore_error:
-                            self.event("临时开灯恢复失败", "error", str(restore_error))
-                            if operation_error is not None:
-                                raise VerificationError(f"原操作失败：{operation_error}；恢复关灯也失败：{restore_error}") from operation_error
-                            raise
+                use_head = (getattr(self.lamp, "experimental_side_light", False)
+                            and self.state.get("experimental_channels")
+                            and any(field in changes for field in ("brightness", "color_temp")))
+                if use_head:
+                    self._control_head(changes)
+                else:
+                    self._control_legacy(changes)
                 for field, value in changes.items():
                     if not same_value(field, self.state[field], value):
                         raise VerificationError(f"组合操作后{self.field_name(field)}未保持请求值")
@@ -195,31 +174,139 @@ class LampApplication:
             result["verified"] = True
             return result
 
+    def _control_legacy(self, changes):
+        """Power-only requests retain legacy overall semantics; ON need not enable both lamps."""
+        starting_power = self.state["power"]
+        final_power = changes.get("power", starting_power)
+        needs_light = any(field in changes and not same_value(field, self.state[field], changes[field]) for field in ("brightness", "color_temp"))
+        temporary_power = needs_light and not starting_power and not final_power
+        order = []
+        if not starting_power and (needs_light or final_power):
+            order.append(("power", True))
+        order.extend((field, changes[field]) for field in ("brightness", "color_temp") if field in changes)
+        if not final_power and (starting_power or needs_light or "power" in changes):
+            order.append(("power", False))
+        elif final_power and not order and "power" in changes:
+            order.append(("power", True))
+        temporary_power_attempted = False
+        operation_error = None
+        try:
+            for field, value in order:
+                if temporary_power and field == "power" and value is True:
+                    temporary_power_attempted = True
+                self._write_verified(field, value)
+                if field == "power" and value is False:
+                    temporary_power_attempted = False
+        except (LampError, OSError) as error:
+            operation_error = error
+            raise
+        finally:
+            # A failed readback can leave stale OFF state after a successful ON packet.
+            if temporary_power_attempted:
+                try:
+                    self._write_verified("power", False)
+                except (LampError, OSError) as restore_error:
+                    self.event("临时开灯恢复失败", "error", str(restore_error))
+                    if operation_error is not None:
+                        raise VerificationError(f"原操作失败：{operation_error}；恢复关灯也失败：{restore_error}") from operation_error
+                    raise
+
+    def _control_head(self, changes):
+        """Dedicated parameters work while head is off; combined ON explicitly enables head."""
+        for field in ("brightness", "color_temp"):
+            if field in changes:
+                self._write_channel_verified("head", field, changes[field])
+        if changes.get("power") is True:
+            self._write_channel_verified("head", "power", True)
+        elif changes.get("power") is False:
+            self._write_verified("power", False)
+        channels = self._channels()
+        for field in ("brightness", "color_temp"):
+            if field in changes and channels[CHANNEL_FIELDS["head"][field]] != changes[field]:
+                raise VerificationError(f"组合操作后主灯{self.field_name(field)}未保持请求值")
+        if changes.get("power") is True and channels["head_power_raw"] != 1:
+            raise VerificationError("总开关为开，但主灯通道未开启")
+
+    def _channels(self):
+        channels = (self.state or {}).get("experimental_channels") or {}
+        if any(key not in channels for fields in CHANNEL_FIELDS.values() for key in fields.values()):
+            raise VerificationError("缺少完整的通道回读字段")
+        return channels
+
+    def _write_channel_once(self, channel, field, value):
+        """Write one parameter, QUERY once, and check every unselected channel field."""
+        before = dict(self._channels())
+        key = CHANNEL_FIELDS[channel][field]
+        expected = max(25, value) if channel == "arm" and field == "brightness" else value
+        writer = self.lamp.write_side_light if channel == "arm" else self.lamp.write_head
+        writer({field: value})
+        time.sleep(0.2)
+        self._read()
+        after = self._channels()
+        other = "head" if channel == "arm" else "arm"
+        other_preserved = all(after[name] == before[name] for name in CHANNEL_FIELDS[other].values())
+        untouched_preserved = all(after[name] == before[name] for fields in CHANNEL_FIELDS.values() for name in fields.values() if name != key)
+        matched = after[key] == expected
+        power_consistent = self.state["power"] == bool(after["arm_power_raw"] or after["head_power_raw"])
+        return {
+            "channel": channel, "field": field, "requested": value, "expected": expected,
+            "actual": bool(after[key]) if field == "power" and after[key] in (0, 1) else after[key],
+            "candidate_readback_matched": matched,
+            "other_channel_preserved": other_preserved,
+            "untouched_fields_preserved": untouched_preserved,
+            "protocol_verified": matched and untouched_preserved and power_consistent,
+            "readback": dict(after),
+        }
+
+    def _write_channel_verified(self, channel, field, value):
+        step = self._write_channel_once(channel, field, value)
+        if not step["protocol_verified"]:
+            raise VerificationError(f"{channel}.{field}通道核验失败；请求={value}，回报={step['actual']}；其他字段保持={step['untouched_fields_preserved']}")
+        if channel == "head":
+            self.verified_fields.add(field)
+        return step
+
     def require_write(self):
         if self.read_only:
             raise LampError("只读模式禁止改变灯光 / Read-only mode blocks light changes")
 
     def side_light(self, changes: dict) -> dict:
+        """Protocol write/readback tested; optical validation pending. Each field gets its own QUERY."""
         self.require_write()
         if not getattr(self.lamp, "experimental_side_light", False):
             raise LampError("Experimental side-light support is disabled")
-        from .protocol import build_channel_body
-        build_channel_body(changes)
+        if not changes or set(changes) - {"power", "brightness"}:
+            raise ValueError("Side-light control accepts power and/or brightness")
+        for field, value in changes.items():
+            build_channel_body({field: value})
         with self.lock:
-            before = self._read()
-            if not before.get("experimental_channels"):
-                raise LampError("No candidate channel state is available")
-            self.lamp.write_side_light(changes)
-            time.sleep(0.2)
-            state = self._read()
-            channels = state.get("experimental_channels") or {}
-            expected = {"arm_power_raw": int(changes["power"])} if "power" in changes else {}
-            if "brightness" in changes:
-                expected["arm_brightness_raw"] = changes["brightness"]
-            matched = all(channels.get(key) == value for key, value in expected.items())
-            self.event("实验侧灯写入", "info" if matched else "error", "候选字段已匹配，需目视确认" if matched else "候选字段未匹配")
+            self._read()
+            before = dict(self._channels())
+            steps = []
+            for field in ("brightness", "power"):
+                if field in changes:
+                    step = self._write_channel_once("arm", field, changes[field])
+                    steps.append(step)
+                    if not step["protocol_verified"]:
+                        break
+            channels = self._channels()
+            actual = {field: bool(channels[key]) if field == "power" else channels[key]
+                      for field, key in CHANNEL_FIELDS["arm"].items() if field in changes}
+            expected = {field: max(25, value) if field == "brightness" else value for field, value in changes.items()}
+            matched = all(step["candidate_readback_matched"] for step in steps) and actual == expected
+            head_preserved = (all(step["other_channel_preserved"] for step in steps)
+                              and all(channels[key] == before[key] for key in CHANNEL_FIELDS["head"].values()))
+            protocol_verified = len(steps) == len(changes) and matched and head_preserved and all(step["protocol_verified"] for step in steps)
+            message = "协议字段回读匹配，主灯字段保持；物理目视验证待完成" if protocol_verified else "侧灯协议核验失败：请求值未保持或其他通道字段发生变化"
+            self.event("实验侧灯写入", "info" if protocol_verified else "error", f"{message}；请求={changes}；实际={actual}")
             result = self.snapshot()
-            result.update({"experimental": True, "candidate_readback_matched": matched, "verified": False, "message": "仅候选字段回读，需确认物理侧灯与其他光源未受影响"})
+            result.update({
+                "ok": protocol_verified, "experimental": True, "protocol_verified": protocol_verified,
+                "candidate_readback_matched": matched, "head_fields_preserved": head_preserved,
+                "requested": dict(changes), "actual": actual,
+                "brightness_clamped": "brightness" in changes and changes["brightness"] < 25 and actual["brightness"] == 25,
+                "steps": steps, "verified": False, "message": message,
+            })
             return result
 
     def _write_verified(self, field, value):
@@ -243,11 +330,41 @@ class LampApplication:
         return self.control({"power": True, "brightness": round(scene["brightness_pct"] * 255 / 100), "color_temp": scene["color_temp"]}, "场景：" + scene["name"])
 
     def restore(self) -> dict:
+        self.require_write()
         with self.lock:
             if self.initial_state is None:
                 raise ValueError("还没有可恢复的启动状态")
+            baseline = self.initial_state.get("experimental_channels")
+            if not baseline:
+                self.cancel_timer(log=False)
+                return self.control({field: self.initial_state[field] for field in ("power", "brightness", "color_temp")}, "恢复启动时状态")
+            if not getattr(self.lamp, "experimental_side_light", False):
+                raise LampError("Experimental channel support is required to restore the saved channels")
+            order = []
+            for channel, field in (("head", "brightness"), ("head", "color_temp"), ("arm", "brightness"), ("head", "power"), ("arm", "power")):
+                key = CHANNEL_FIELDS[channel][field]
+                if key not in baseline or (field == "power" and baseline[key] not in (0, 1)):
+                    raise VerificationError("启动基线缺少可恢复的通道字段")
+                value = bool(baseline[key]) if field == "power" else baseline[key]
+                (build_head_body if channel == "head" else build_channel_body)({field: value})
+                order.append((channel, field, value))
             self.cancel_timer(log=False)
-            return self.control({field: self.initial_state[field] for field in ("power", "brightness", "color_temp")}, "恢复启动时状态")
+            try:
+                self._read()
+                for channel, field, value in order:
+                    self._write_channel_verified(channel, field, value)
+                channels = self._channels()
+                if any(channels[key] != baseline[key] for fields in CHANNEL_FIELDS.values() for key in fields.values()):
+                    raise VerificationError("恢复后通道字段与完整启动基线不一致")
+                if any(self.state[field] != self.initial_state[field] for field in ("power", "brightness", "color_temp")):
+                    raise VerificationError("恢复后总状态与启动基线不一致")
+                self.event("恢复启动时状态", "success", "主灯和侧灯全部协议字段已恢复启动基线")
+            except (LampError, OSError) as error:
+                self.event("恢复启动时状态", "error", str(error))
+                raise
+            result = self.snapshot()
+            result.update({"verified": True, "protocol_verified": True, "channels_restored": True})
+            return result
 
     def set_timer(self, minutes: int) -> dict:
         self.require_write()
@@ -380,7 +497,7 @@ class DemoHandler(BaseHTTPRequestHandler):
                 result = app.cancel_timer()
             else:
                 return self._json(404, {"ok": False, "message": "控制接口不存在"})
-            self._json(200, result)
+            self._json(200 if result.get("ok", True) else 409, result)
         except (ValueError, json.JSONDecodeError) as error:
             self._json(400, {"ok": False, "message": str(error)})
         except VerificationError as error:

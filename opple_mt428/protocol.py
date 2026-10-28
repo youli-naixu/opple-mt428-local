@@ -112,29 +112,55 @@ def parse_reply(data: bytes, mac: bytes | None = None) -> Reply:
     )
 
 
-def build_channel_body(changes: dict) -> bytes:
-    """Experimental wire fields from the 0x50061 vendor-app analysis; not hardware-verified."""
-    if not changes or set(changes) - {"power", "brightness"}:
-        raise ValueError("Side-light control accepts power and/or brightness")
+def _build_channel_body(changes: dict, *, head: bool) -> bytes:
+    fields = {"power", "brightness", "color_temp"} if head else {"power", "brightness"}
+    if len(changes) != 1 or set(changes) - fields:
+        raise ValueError("Channel control requires exactly one supported field per packet")
     body = bytearray(10)
     body[:4] = SUPPORTED_SKU.to_bytes(4, "big")
     body[4] = body[6] = 2
-    if "power" in changes:
-        if type(changes["power"]) is not bool:
-            raise ValueError("Side-light power must be a boolean")
-        body[4] = int(changes["power"])
-    if "brightness" in changes:
-        if type(changes["brightness"]) is not int or not 10 <= changes["brightness"] <= 255:
-            raise ValueError("Experimental side-light brightness must be raw 10..255")
-        body[5] = changes["brightness"]
+    field, value = next(iter(changes.items()))
+    if field == "power":
+        if type(value) is not bool:
+            raise ValueError("Channel power must be a boolean")
+        body[6 if head else 4] = int(value)
+    elif field == "brightness":
+        minimum = 1 if head else 10
+        if type(value) is not int or not minimum <= value <= 255:
+            raise ValueError(f"Channel brightness must be raw {minimum}..255")
+        body[7 if head else 5] = value
+    elif field == "color_temp":
+        if type(value) is not int or not 2700 <= value <= 6500:
+            raise ValueError("Head color temperature must be 2700..6500 K")
+        body[8:10] = value.to_bytes(2, "big")
     return bytes(body)
 
 
+def build_channel_body(changes: dict) -> bytes:
+    """Side protocol write/readback tested; optical validation pending.
+
+    One field per packet: firmware ignores brightness when power is also set.
+    Current firmware clamps side brightness requests below raw 25 to 25.
+    """
+    return _build_channel_body(changes, head=False)
+
+
+def build_head_body(changes: dict) -> bytes:
+    """Head protocol write/readback tested; optical validation pending.
+
+    Only headPower@6, headBrightness@7 or headCCT@8:10 is selected per packet.
+    Zero brightness is the wire no-change sentinel and is rejected; callers may
+    normalize lower requests to the current firmware minimum of raw 25.
+    """
+    return _build_channel_body(changes, head=True)
+
+
 def parse_channel_state(body: bytes) -> dict | None:
+    """Channel protocol write/readback tested; optical validation pending."""
     if len(body) < 58:
         return None
     return {
-        "evidence": "vendor-app-static-analysis; hardware-validation-pending",
+        "evidence": "vendor-app-static-analysis+device-write-readback;visual-validation-pending",
         "arm_power_raw": body[52],
         "arm_brightness_raw": body[53],
         "head_power_raw": body[54],
@@ -259,6 +285,9 @@ class OppleLamp:
             return state
 
     def write(self, field: str, value: bool | int):
+        """Legacy power is an overall request; QUERY does not identify which lamp is on."""
+        if self.read_only:
+            raise LampError("Read-only mode: light-changing commands are disabled")
         with self._lock:
             if not self.initialized:
                 self.discover()
@@ -273,11 +302,18 @@ class OppleLamp:
             self._send(message_type, body)
 
     def write_side_light(self, changes: dict):
+        """Single-field protocol write/readback tested; optical validation pending."""
+        self._write_channel(build_channel_body(changes))
+
+    def write_head(self, changes: dict):
+        """Single-field protocol write/readback tested; optical validation pending."""
+        self._write_channel(build_head_body(changes))
+
+    def _write_channel(self, body: bytes):
         if not self.experimental_side_light:
-            raise LampError("Experimental side-light support is disabled")
+            raise LampError("Experimental channel support is disabled")
         if self.read_only:
-            raise LampError("Read-only mode: side-light writes are disabled")
-        body = build_channel_body(changes)
+            raise LampError("Read-only mode: channel writes are disabled")
         with self._lock:
             if not self.initialized:
                 self.discover()

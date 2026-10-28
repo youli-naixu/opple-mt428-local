@@ -31,7 +31,7 @@
   let currentCapabilities = [];
   let statusHasFailed = false;
   let sideDraftDirty = false;
-  let sideBrightnessDraft = 10;
+  let sideBrightnessDraft = 25;
   const POLL_INTERVAL = 5000;
   const REQUEST_TIMEOUT = 16000;
   const MODEL = "MT428-D0.5×36+0.2×21-WTT";
@@ -53,8 +53,8 @@
     return date ? date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }) : "尚无读数";
   };
   const displayValue = (value) => value === null || value === undefined || value === "" ? "未提供" : String(value);
-  const percentOf = (state) => validNumber(state?.brightness_pct) ? clamp(Math.round(state.brightness_pct), 0, 100) : validNumber(state?.brightness) ? clamp(Math.round(state.brightness * 100 / 255), 0, 100) : null;
-  const tempOf = (state) => validNumber(state?.color_temp) ? Math.round(state.color_temp) : null;
+  const percentOf = (state) => validNumber(state?.experimental_channels?.head_brightness_raw) ? clamp(Math.round(state.experimental_channels.head_brightness_raw * 100 / 255), 0, 100) : validNumber(state?.brightness_pct) ? clamp(Math.round(state.brightness_pct), 0, 100) : validNumber(state?.brightness) ? clamp(Math.round(state.brightness * 100 / 255), 0, 100) : null;
+  const tempOf = (state) => validNumber(state?.experimental_channels?.head_color_temp_raw) ? Math.round(state.experimental_channels.head_color_temp_raw) : validNumber(state?.color_temp) ? Math.round(state.color_temp) : null;
   const currentState = () => stateExists(snapshot?.state) ? snapshot.state : null;
   const isOnline = () => connection === "online";
   const isSimulated = () => snapshot?.simulated === true;
@@ -132,7 +132,7 @@
     if (!state || draftDirty || draftEditing || isDraftFocused()) return;
     const brightness = percentOf(state);
     const temp = tempOf(state);
-    if (brightness !== null) draft.brightness = clamp(brightness, 1, 100);
+    if (brightness !== null) draft.brightness = clamp(brightness, 10, 100);
     if (temp !== null) draft.colorTemp = clamp(temp, 2700, 6500);
     hasDraftBaseline = brightness !== null && temp !== null;
   }
@@ -149,14 +149,14 @@
     dom.colorTempRange.value = String(draft.colorTemp);
     dom.brightnessRange.setAttribute("aria-valuetext", `${draft.brightness}%`);
     dom.colorTempRange.setAttribute("aria-valuetext", `${draft.colorTemp} K`);
-    dom.brightnessRange.style.setProperty("--range-progress", `${(draft.brightness - 1) / 99 * 100}%`);
+    dom.brightnessRange.style.setProperty("--range-progress", `${(draft.brightness - 10) / 90 * 100}%`);
     dom.brightnessOutput.replaceChildren(document.createTextNode(String(draft.brightness)), make("span", "", "%"));
     dom.colorTempOutput.replaceChildren(document.createTextNode(String(draft.colorTemp)), make("span", "", "K"));
     dom.draftIndicator.classList.toggle("is-dirty", draftDirty);
     dom.draftStatus.textContent = isReadOnly() ? "只读模式：滑块仅供本页预览，写入已禁用" : isSimulated() ? draftDirty ? "模拟预览已调整，点击应用仅更新模拟状态" : "拖动仅预览；点击应用只更新模拟状态，不连接真实台灯" : draftDirty ? "预览已调整，点击“开灯并应用”后生效" : "拖动只预览，点击应用后才控制台灯";
     dom.previewMode.classList.toggle("is-draft", draftDirty);
     dom.previewMode.textContent = draftDirty ? "草稿预览 · 尚未应用" : !isOnline() ? "光线示意 · 非实时" : currentState() ? isSimulated() ? "模拟回读 · 光线示意" : "设备读回 · 光线示意" : "光线示意 · 等待查询";
-    const previewPower = draftDirty || currentState()?.power === true;
+    const previewPower = draftDirty || (hasSideField("head_power_raw") ? sideChannels().head_power_raw === 1 : currentState()?.power === true);
     dom.lampStage.classList.toggle("is-off", !previewPower);
     dom.lampStage.classList.toggle("is-uncertain", !isOnline() && !draftDirty);
     dom.lampStage.style.setProperty("--light-color", temperatureColor(draft.colorTemp));
@@ -172,12 +172,13 @@
     dom.stateCaption.textContent = isSimulated() ? state ? "模拟回读 · 不代表实物状态" : "等待模拟状态" : !online ? state ? "以下为旧值，请勿视为实时" : "等待设备响应" : state ? "实际状态已读回" : "尚未获得实际状态";
     dom.actualBrightness.textContent = state && percentOf(state) !== null ? String(percentOf(state)) : "—";
     dom.actualColorTemp.textContent = state && tempOf(state) !== null ? String(tempOf(state)) : "—";
-    dom.actualPower.textContent = state ? `${state.power ? "已开启" : "已关闭"}${online ? "" : " · 旧值"}` : "待查询";
+    const channelPower = hasSideField("head_power_raw") && hasSideField("arm_power_raw") ? `主${sideChannels().head_power_raw === 1 ? "开" : "关"}／侧${sideChannels().arm_power_raw === 1 ? "开" : "关"}` : state ? state.power ? "已开启" : "已关闭" : "待查询";
+    dom.actualPower.textContent = `${channelPower}${state && !online ? " · 旧值" : ""}`;
     dom.lastUpdated.textContent = `最后更新：${formatDateTime(state?.observed_at)}${state && !online ? " · 非实时" : ""}`;
     dom.powerButton.setAttribute("aria-pressed", String(state?.power === true));
     dom.powerButton.setAttribute("aria-label", isReadOnly() ? "只读模式，灯光开关已禁用" : !online ? "灯光状态待确认，当前不可控制" : state ? `${isSimulated() ? "模拟" : ""}${state.power ? "关闭灯光" : "开启灯光"}` : "灯光状态待查询");
     dom.powerText.textContent = state ? state.power ? "已开启" : "已关闭" : "待查询";
-    dom.powerHint.textContent = isReadOnly() ? "只读模式，不会改变灯光" : isSimulated() ? "只更新模拟状态，不连接真实台灯" : online && state ? "以设备读回为准；副灯已定位协议，实验待验证" : "待设备在线并读回状态后可控制";
+    dom.powerHint.textContent = isReadOnly() ? "只读模式，不会改变灯光" : isSimulated() ? "只更新模拟状态，不连接真实台灯" : online && state ? "总电源状态：任一光源开启即为开；分通道状态见左侧" : "待设备在线并读回状态后可控制";
     const initial = stateExists(snapshot?.initial_state) ? snapshot.initial_state : null;
     dom.initialStateSummary.textContent = initial ? `本次服务启动首次${isSimulated() ? "模拟回读" : "读回"}：${initial.power ? "开启" : "关闭"} · ${percentOf(initial) ?? "—"}% · ${tempOf(initial) ?? "—"} K。${isReadOnly() ? "只读模式，恢复已禁用。" : isSimulated() ? "恢复仅更新模拟状态。" : "恢复由本地服务执行。"}` : "本地服务会在首次查询时保存本次启动的初始状态。";
     syncDraftFromState(state);
@@ -202,7 +203,7 @@
       dom.sideLightChannels.append(row);
     }
     const brightness = sideChannels()?.arm_brightness_raw;
-    if (hasSideField("arm_brightness_raw") && brightness >= 10 && brightness <= 255 && !sideDraftDirty && document.activeElement !== dom.sideLightBrightnessRange) {
+    if (hasSideField("arm_brightness_raw") && brightness >= 25 && brightness <= 255 && !sideDraftDirty && document.activeElement !== dom.sideLightBrightnessRange) {
       sideBrightnessDraft = brightness;
     }
     renderSideDraft();
@@ -211,7 +212,7 @@
   function renderSideDraft() {
     dom.sideLightBrightnessRange.value = String(sideBrightnessDraft);
     dom.sideLightBrightnessRange.setAttribute("aria-valuetext", `原始值 ${sideBrightnessDraft}`);
-    dom.sideLightBrightnessRange.style.setProperty("--range-progress", `${(sideBrightnessDraft - 10) / 245 * 100}%`);
+    dom.sideLightBrightnessRange.style.setProperty("--range-progress", `${(sideBrightnessDraft - 25) / 230 * 100}%`);
     dom.sideLightBrightnessOutput.textContent = String(sideBrightnessDraft);
   }
 
@@ -236,7 +237,7 @@
       button.append(sceneIcon, make("strong", "", scene.name || scene.id), make("span", "scene-settings", `${brightness} · ${temp}`), make("span", "scene-description", scene.description || "本地亮度与色温组合"));
       button.setAttribute("aria-label", `应用本地场景：${scene.name || scene.id}，${brightness}，${temp}`);
       const state = currentState();
-      const active = isOnline() && state?.power === true && percentOf(state) === Math.round(scene.brightness_pct) && tempOf(state) === scene.color_temp;
+      const active = isOnline() && (Number.isInteger(state?.experimental_channels?.head_power_raw) ? state.experimental_channels.head_power_raw === 1 : state?.power === true) && percentOf(state) === Math.round(scene.brightness_pct) && tempOf(state) === scene.color_temp;
       button.classList.toggle("is-current", active);
       button.addEventListener("click", () => performOperation({
         endpoint: "/api/scene", body: { id: scene.id }, loading: `正在应用“${scene.name || scene.id}”本地场景并读回…`,
@@ -275,7 +276,7 @@
       const top = make("span", "capability-top");
       const badgeText = { verified: "实机已验证", simulated: "模拟回读", available: "本地可用", experimental: "实验性待验证", unadapted: "未适配" }[visualStatus];
       top.append(make("span", "capability-title", capability.title || capability.id || "未命名功能"), make("span", `capability-badge is-${visualStatus}`, badgeText));
-      const description = sideLight ? "已定位协议，实验待验证。查询字段仅为候选，不代表物理验证 / Candidate query fields; not physically verified." : status === "experimental" ? "实验性功能，待验证 / Experimental; pending verification." : visualStatus === "simulated" ? "仅由模拟服务回读，不代表真实台灯验证 / Simulated readback only; no hardware verification." : capability.description || "暂无说明";
+      const description = sideLight ? "开关、调光与另一通道保持已通过实物协议回读；光线效果待目视确认 / Device write/readback tested; visual check pending." : status === "experimental" ? "实验性功能，待验证 / Experimental; pending verification." : visualStatus === "simulated" ? "仅由模拟服务回读，不代表真实台灯验证 / Simulated readback only; no hardware verification." : capability.description || "暂无说明";
       card.append(top, make("span", "capability-description", description));
       if (target) {
         const hint = make("span", "capability-action", status === "experimental" ? "查看实验面板" : isReadOnly() ? "查看状态" : "前往控制");
@@ -489,8 +490,8 @@
     if (experimental) {
       const powerCommand = typeof body?.power === "boolean";
       const field = powerCommand ? "arm_power_raw" : "arm_brightness_raw";
-      if (!hasSideControls(field) || !powerCommand && (!Number.isInteger(body?.brightness) || body.brightness < 10 || body.brightness > 255)) {
-        feedback("warning", "未读到对应候选字段或原始亮度超出 10–255；请先刷新状态 / Missing candidate field or raw brightness outside 10–255.");
+      if (!hasSideControls(field) || !powerCommand && (!Number.isInteger(body?.brightness) || body.brightness < 25 || body.brightness > 255)) {
+        feedback("warning", "未读到通道字段或原始亮度超出 25–255；请先刷新状态 / Missing channel field or brightness outside 25–255.");
         return;
       }
     }
@@ -512,6 +513,7 @@
       if (experimental) {
         statusHasFailed = false;
         if (data.experimental !== true) feedback("warning", "服务未返回实验标记，候选读回待核对；物理效果待目视验证 / Experimental marker missing; readback and physical effects remain unverified.");
+        else if (data.protocol_verified === true && data.head_fields_preserved === true) feedback("success", "侧灯写入与状态回读匹配，主灯字段保持；请目视核对光线效果 / Protocol readback confirmed; head preserved; visual check pending.");
         else if (data.candidate_readback_matched === true) feedback("warning", "候选字段匹配，待目视验证 / Candidate fields match; visual verification pending.");
         else if (data.candidate_readback_matched === false) feedback("warning", "候选字段未匹配，物理效果待目视验证；不会自动重发 / Candidate fields did not match; visual verification pending. No automatic resend.");
         else feedback("warning", "未返回候选字段匹配结果，待目视验证 / Candidate match result missing; visual verification pending.");
@@ -540,7 +542,7 @@
   function updateDraft() {
     draft = { brightness: Number(dom.brightnessRange.value), colorTemp: Number(dom.colorTempRange.value) };
     const state = currentState();
-    draftDirty = !hasDraftBaseline || !state || draft.brightness !== clamp(percentOf(state) ?? 60, 1, 100) || draft.colorTemp !== clamp(tempOf(state) ?? 4000, 2700, 6500);
+    draftDirty = !hasDraftBaseline || !state || draft.brightness !== clamp(percentOf(state) ?? 60, 10, 100) || draft.colorTemp !== clamp(tempOf(state) ?? 4000, 2700, 6500);
     renderDraft();
   }
 
@@ -577,7 +579,7 @@
   }));
 
   dom.sideLightBrightnessRange.addEventListener("input", () => {
-    sideBrightnessDraft = clamp(Math.round(Number(dom.sideLightBrightnessRange.value)), 10, 255);
+    sideBrightnessDraft = clamp(Math.round(Number(dom.sideLightBrightnessRange.value)), 25, 255);
     sideDraftDirty = sideBrightnessDraft !== sideChannels()?.arm_brightness_raw;
     renderSideDraft();
   });
